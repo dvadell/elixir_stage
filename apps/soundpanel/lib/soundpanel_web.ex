@@ -17,7 +17,9 @@ defmodule SoundpanelWeb do
   those modules here.
   """
 
-  def static_paths, do: ~W(assets fonts images favicon.ico robots.txt soundboard.html sw.js)
+  def static_paths,
+    do:
+      ~W(assets fonts images icons manifest.webmanifest favicon.ico robots.txt soundboard.html sw.js)
 
   def router do
     quote do

@@ -1,10 +1,18 @@
 var SHELL = "/soundboard.html";
-var CACHE = "soundpanel-shell-v1";
+var CACHE = "soundpanel-shell-v2";
+var PRECACHE = [
+  "/soundboard.html",
+  "/manifest.webmanifest",
+  "/icons/icon-192.png",
+  "/icons/icon-512.png",
+  "/icons/icon-maskable-512.png",
+  "/icons/apple-touch-icon.png"
+];
 
 self.addEventListener("install", function (event) {
   event.waitUntil(
     caches.open(CACHE).then(function (cache) {
-      return cache.add(SHELL);
+      return cache.addAll(PRECACHE);
     })
   );
   self.skipWaiting();
