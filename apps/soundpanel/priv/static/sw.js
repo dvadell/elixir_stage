@@ -1,5 +1,5 @@
 var SHELL = "/soundboard.html";
-var CACHE = "soundpanel-shell-v3";
+var CACHE = "soundpanel-shell-v4";
 var PRECACHE = [
   "/soundboard.html",
   "/manifest.webmanifest",
@@ -34,6 +34,17 @@ self.addEventListener("fetch", function (event) {
 
   var url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
+
+  if (url.pathname === "/manifest.webmanifest") {
+    event.respondWith(
+      fetch(request)
+        .then(function (response) {
+          return response;
+        })
+        .catch(function () { return caches.match(request); })
+    );
+    return;
+  }
 
   if (request.mode === "navigate") {
     event.respondWith(
