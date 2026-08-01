@@ -27,6 +27,8 @@ defmodule SoundpanelWeb.CoreComponents do
 
   """
   use Phoenix.Component
+
+  alias Phoenix.HTML.Form
   use Gettext, backend: SoundpanelWeb.Gettext
 
   alias Phoenix.LiveView.JS
@@ -95,9 +97,9 @@ defmodule SoundpanelWeb.CoreComponents do
       <.button phx-click="go" variant="primary">Send!</.button>
       <.button navigate={~p"/"}>Home</.button>
   """
-  attr :rest, :global, include: ~w(href navigate patch method download name value disabled)
+  attr :rest, :global, include: ~W(href navigate patch method download name value disabled)
   attr :class, :any
-  attr :variant, :string, values: ~w(primary)
+  attr :variant, :string, values: ~W(primary)
   slot :inner_block, required: true
 
   def button(%{rest: rest} = assigns) do
@@ -170,8 +172,8 @@ defmodule SoundpanelWeb.CoreComponents do
 
   attr :type, :string,
     default: "text",
-    values: ~w(checkbox color date datetime-local email file month number password
-               search select tel text textarea time url week hidden)
+    values: ~W(checkbox color date datetime-local email file month number password
+                search select tel text textarea time url week hidden)
 
   attr :field, Phoenix.HTML.FormField,
     doc: "a form field struct retrieved from the form, for example: @form[:email]"
@@ -185,7 +187,7 @@ defmodule SoundpanelWeb.CoreComponents do
   attr :error_class, :any, default: nil, doc: "the input error class to use over defaults"
 
   attr :rest, :global,
-    include: ~w(accept autocomplete capture cols disabled form list max maxlength min minlength
+    include: ~W(accept autocomplete capture cols disabled form list max maxlength min minlength
                 multiple pattern placeholder readonly required rows size step)
 
   def input(%{field: %Phoenix.HTML.FormField{} = field} = assigns) do
@@ -208,7 +210,7 @@ defmodule SoundpanelWeb.CoreComponents do
   def input(%{type: "checkbox"} = assigns) do
     assigns =
       assign_new(assigns, :checked, fn ->
-        Phoenix.HTML.Form.normalize_value("checkbox", assigns[:value])
+        Form.normalize_value("checkbox", assigns[:value])
       end)
 
     ~H"""

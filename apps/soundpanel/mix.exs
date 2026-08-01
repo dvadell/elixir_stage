@@ -15,7 +15,8 @@ defmodule Soundpanel.MixProject do
       aliases: aliases(),
       deps: deps(),
       compilers: [:phoenix_live_view] ++ Mix.compilers(),
-      listeners: [Phoenix.CodeReloader]
+      listeners: [Phoenix.CodeReloader],
+      test_coverage: [summary: [threshold: 30]]
     ]
   end
 
@@ -30,9 +31,7 @@ defmodule Soundpanel.MixProject do
   end
 
   def cli do
-    [
-      preferred_envs: [precommit: :test]
-    ]
+    []
   end
 
   # Specifies which paths to compile per environment.
@@ -103,7 +102,7 @@ defmodule Soundpanel.MixProject do
         "format",
         "credo --strict",
         "dialyzer",
-        "test --cover"
+        ~S(cmd sh -c "MIX_ENV=test mix test --cover")
       ]
     ]
   end

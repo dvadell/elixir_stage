@@ -1,7 +1,6 @@
 defmodule SoundpanelWeb.Layouts do
   @moduledoc """
-  This module holds layouts and related functionality
-  used by your application.
+  Provides layout templates and theme toggle for the application.
   """
   use SoundpanelWeb, :html
 
@@ -45,16 +44,16 @@ defmodule SoundpanelWeb.Layouts do
       <div class="flex-none">
         <ul class="flex flex-column px-1 space-x-4 items-center">
           <li>
-            <a href="https://phoenixframework.org/" class="btn btn-ghost">Website</a>
+            <a href="/" class="btn btn-ghost">Website</a>
           </li>
           <li>
-            <a href="https://github.com/phoenixframework/phoenix" class="btn btn-ghost">GitHub</a>
+            <a href="/phoenixframework/phoenix" class="btn btn-ghost">GitHub</a>
           </li>
           <li>
             <.theme_toggle />
           </li>
           <li>
-            <a href="https://phoenix.hexdocs.pm/overview.html" class="btn btn-primary">
+            <a href="/overview.html" class="btn btn-primary">
               Get Started <span aria-hidden="true">&rarr;</span>
             </a>
           </li>
