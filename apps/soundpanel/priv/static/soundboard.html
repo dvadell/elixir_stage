@@ -412,6 +412,39 @@
       .save-btn:active { transform: scale(0.94); }
       .save-btn:disabled { opacity: 0.5; transform: none; cursor: default; }
 
+      .delete-section {
+        margin-top: 2.5rem;
+        padding-top: 1.5rem;
+        border-top: 1px solid var(--border);
+        text-align: center;
+      }
+
+      .delete-btn {
+        border: none;
+        border-radius: 1rem;
+        background: #dc2626;
+        color: #fff;
+        font: inherit;
+        font-size: 1rem;
+        font-weight: 700;
+        padding: 0.9rem 2.5rem;
+        cursor: pointer;
+        box-shadow: 0 8px 24px -8px rgba(220, 38, 38, 0.7);
+        transition: transform 0.15s ease, box-shadow 0.2s ease, background 0.2s ease;
+        width: 100%;
+        max-width: 20rem;
+      }
+
+      .delete-btn:hover {
+        background: #ef4444;
+        transform: translateY(-2px);
+        box-shadow: 0 12px 28px -8px rgba(220, 38, 38, 1);
+      }
+
+      .delete-btn:active {
+        transform: scale(0.96);
+      }
+
       .edit-main {
         max-width: 40rem;
         margin: 0 auto;
@@ -599,6 +632,9 @@
           <p class="edit-label" id="edit-icon-label">Icon</p>
           <div id="icon-grid" class="icon-grid" aria-labelledby="edit-icon-label"></div>
         </section>
+        <section class="delete-section">
+          <button id="delete-btn" class="delete-btn" type="button">Delete sound</button>
+        </section>
       </main>
     </div>
 
@@ -668,6 +704,7 @@
         var editPreviewName = document.getElementById("edit-preview-name");
         var editSub = document.getElementById("edit-sub");
         var iconGrid = document.getElementById("icon-grid");
+        var deleteBtn = document.getElementById("delete-btn");
 
         var db = null;
         var sounds = [];
@@ -727,6 +764,10 @@
 
         function put(sound) {
           return tx("readwrite", function (store) { return store.put(sound); });
+        }
+
+        function deleteSound(id) {
+          return tx("readwrite", function (store) { return store.delete(id); });
         }
 
         function stopPlayback() {
@@ -1077,8 +1118,23 @@
           });
         }
 
+        function deleteCurrentSound() {
+          if (!editingId) return;
+          if (!confirm("Delete this sound permanently?")) return;
+          stopPlayback();
+          deleteSound(editingId).then(function () {
+            return refresh();
+          }).then(function () {
+            showToast("Sound deleted");
+            navigateHome();
+          }).catch(function () {
+            showToast("Could not delete sound");
+          });
+        }
+
         backBtn.addEventListener("click", navigateHome);
         saveBtn.addEventListener("click", saveEdit);
+        deleteBtn.addEventListener("click", deleteCurrentSound);
         editNameInput.addEventListener("input", updatePreview);
         window.addEventListener("hashchange", renderRoute);
 
