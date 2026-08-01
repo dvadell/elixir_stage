@@ -2,7 +2,7 @@ name: elixir_stage
 
 services:
   soundpanel:
-    image: ghcr.io/dvadell/elixir_stage:d2030b705ccb854a882d0cd6c680a52a525ab760
+    image: ghcr.io/dvadell/elixir_stage:latest
     container_name: soundpanel
     restart: unless-stopped
     ports:
