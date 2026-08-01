@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0b0e14" />
+    <meta name="description" content="A fast, offline-first soundboard. Add short sounds and play them instantly." />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <title>Soundpanel</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0b0e14;
+        --surface: #171d29;
+        --surface-hover: #202839;
+        --border: rgba(255, 255, 255, 0.08);
+        --text: #f4f6fb;
+        --text-dim: #96a1b5;
+        --accent: #7c5cff;
+        --accent-2: #22d3ee;
+        --grad: linear-gradient(135deg, #7c5cff, #22d3ee);
+        --on-accent: #ffffff;
+        --online: #4ade80;
+        --offline: #fbbf24;
+      }
+
+      @media (prefers-color-scheme: light) {
+        :root {
+          color-scheme: light;
+          --bg: #eef1f7;
+          --surface: #ffffff;
+          --surface-hover: #f1f3f9;
+          --border: rgba(15, 23, 42, 0.1);
+          --text: #0f172a;
+          --text-dim: #5b6b82;
+          --grad: linear-gradient(135deg, #6a4bff, #0ea5c9);
+        }
+      }
+
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+
+      html { -webkit-text-size-adjust: 100%; }
+
+      body {
+        min-height: 100vh;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        background:
+          radial-gradient(70rem 32rem at 115% -10%, rgba(124, 92, 255, 0.16), transparent 60%),
+          radial-gradient(55rem 30rem at -15% 115%, rgba(34, 211, 238, 0.12), transparent 60%),
+          var(--bg);
+        color: var(--text);
+        -webkit-tap-highlight-color: transparent;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        max-width: 64rem;
+        margin: 0 auto;
+        width: 100%;
+        padding: 1.4rem 1.35rem 0.6rem;
+      }
+
+      h1 { font-size: 1.4rem; font-weight: 800; letter-spacing: -0.03em; }
+
+      .sub { margin-top: 0.15rem; font-size: 0.78rem; font-weight: 500; color: var(--text-dim); }
+
+      .status {
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+        padding: 0.35rem 0.7rem;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        background: var(--surface);
+        font-size: 0.72rem;
+        font-weight: 600;
+        color: var(--text-dim);
+        white-space: nowrap;
+      }
+
+      .dot {
+        width: 0.55rem;
+        height: 0.55rem;
+        border-radius: 50%;
+        background: var(--online);
+        box-shadow: 0 0 8px rgba(74, 222, 128, 0.9);
+        transition: background 0.2s ease, box-shadow 0.2s ease;
+      }
+
+      .dot.offline { background: var(--offline); box-shadow: 0 0 8px rgba(251, 191, 36, 0.9); }
+
+      main {
+        max-width: 64rem;
+        margin: 0 auto;
+        width: 100%;
+        padding: 0.75rem 1.35rem 8rem;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 0.85rem;
+      }
+
+      @media (min-width: 560px) { .grid { grid-template-columns: repeat(3, 1fr); gap: 1rem; } }
+      @media (min-width: 840px) { .grid { grid-template-columns: repeat(4, 1fr); } }
+      @media (min-width: 1160px) { .grid { grid-template-columns: repeat(6, 1fr); } }
+
+      .sound {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        aspect-ratio: 1 / 1;
+        padding: 1.1rem 0.7rem 0.7rem;
+        border-radius: 1.25rem;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        color: var(--text);
+        cursor: pointer;
+        touch-action: manipulation;
+        user-select: none;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 12px 26px -18px rgba(0, 0, 0, 0.8);
+        transition: transform 0.16s ease, box-shadow 0.22s ease, border-color 0.22s ease, background 0.22s ease;
+      }
+
+      .sound:hover { transform: translateY(-3px); border-color: rgba(124, 92, 255, 0.55); background: var(--surface-hover); }
+      .sound:active { transform: scale(0.93); }
+      .sound:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+
+      .sound.playing {
+        border-color: transparent;
+        background: linear-gradient(160deg, rgba(124, 92, 255, 0.22), rgba(34, 211, 238, 0.12)), var(--surface);
+        box-shadow: 0 0 0 1px rgba(124, 92, 255, 0.6), 0 0 28px -6px rgba(124, 92, 255, 0.55);
+      }
+
+      .sound-icon {
+        display: grid;
+        place-items: center;
+        width: 3.3rem;
+        height: 3.3rem;
+        border-radius: 1rem;
+        background: var(--grad);
+        color: var(--on-accent);
+        box-shadow: 0 10px 20px -10px rgba(124, 92, 255, 0.9);
+      }
+
+      .sound-icon svg { width: 1.7rem; height: 1.7rem; }
+
+      .sound-name {
+        width: 100%;
+        margin-top: 0.8rem;
+        min-height: 2.35em;
+        font-size: 0.82rem;
+        font-weight: 600;
+        line-height: 1.2;
+        text-align: center;
+        overflow-wrap: anywhere;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+
+      .eq {
+        position: absolute;
+        top: 0.7rem;
+        right: 0.7rem;
+        display: none;
+        align-items: flex-end;
+        gap: 2px;
+        height: 13px;
+        color: var(--accent-2);
+      }
+
+      .sound.playing .eq { display: flex; }
+
+      .eq span {
+        width: 3px;
+        height: 30%;
+        border-radius: 2px;
+        background: currentColor;
+        animation: eq 0.9s ease-in-out infinite;
+      }
+
+      .eq span:nth-child(2) { animation-delay: 0.15s; }
+      .eq span:nth-child(3) { animation-delay: 0.3s; }
+
+      @keyframes eq {
+        0%, 100% { height: 30%; }
+        50% { height: 100%; }
+      }
+
+      .empty {
+        display: none;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        margin-top: 6rem;
+        padding: 0 1rem;
+        color: var(--text-dim);
+      }
+
+      .empty.visible { display: flex; }
+
+      .empty-icon {
+        display: grid;
+        place-items: center;
+        width: 4.5rem;
+        height: 4.5rem;
+        margin-bottom: 1.1rem;
+        border-radius: 1.4rem;
+        border: 1.5px dashed var(--border);
+        background: var(--surface);
+      }
+
+      .empty-icon svg { width: 2rem; height: 2rem; color: var(--text-dim); }
+
+      .empty h2 { margin-bottom: 0.3rem; font-size: 1.05rem; font-weight: 700; color: var(--text); }
+      .empty p { font-size: 0.85rem; line-height: 1.5; }
+
+      .add {
+        position: fixed;
+        right: max(1.35rem, env(safe-area-inset-right));
+        bottom: calc(1.6rem + env(safe-area-inset-bottom, 0px));
+        z-index: 20;
+        display: grid;
+        place-items: center;
+        width: 4.5rem;
+        height: 4.5rem;
+        border: none;
+        border-radius: 50%;
+        background: var(--grad);
+        color: var(--on-accent);
+        cursor: pointer;
+        box-shadow: 0 16px 34px -12px rgba(124, 92, 255, 0.95), 0 6px 16px -6px rgba(0, 0, 0, 0.6);
+        transition: transform 0.18s ease, box-shadow 0.22s ease;
+      }
+
+      .add:hover { transform: translateY(-3px) scale(1.04); box-shadow: 0 22px 44px -14px rgba(124, 92, 255, 1); }
+      .add:active { transform: scale(0.9); }
+      .add:focus-visible { outline: 3px solid var(--accent-2); outline-offset: 3px; }
+
+      .add svg { width: 1.9rem; height: 1.9rem; }
+
+      .toast {
+        position: fixed;
+        left: 50%;
+        bottom: calc(1.4rem + env(safe-area-inset-bottom, 0px));
+        z-index: 30;
+        max-width: min(80vw, 24rem);
+        padding: 0.65rem 1.15rem;
+        border-radius: 999px;
+        background: var(--surface-hover);
+        border: 1px solid var(--border);
+        color: var(--text);
+        font-size: 0.8rem;
+        font-weight: 600;
+        text-align: center;
+        box-shadow: 0 14px 32px -12px rgba(0, 0, 0, 0.7);
+        opacity: 0;
+        pointer-events: none;
+        transform: translateX(-50%) translateY(160%);
+        transition: transform 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.25), opacity 0.2s ease;
+      }
+
+      .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        * { animation: none !important; transition: none !important; }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>Soundpanel</h1>
+        <p class="sub" id="sound-count">0 sounds</p>
+      </div>
+      <div class="status">
+        <span class="dot" id="status-dot"></span>
+        <span id="status-text">Online</span>
+      </div>
+    </header>
+
+    <main>
+      <section id="empty-state" class="empty visible">
+        <span class="empty-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none">
+            <path d="M4 9.2v5.6a1 1 0 0 0 1 1H7.6L12 19.2V4.8L7.6 8.2H5a1 1 0 0 0-1 1Z" fill="currentColor"/>
+            <path d="M14.6 8.6a4 4 0 0 1 0 6.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            <path d="M17.2 6.2a7 7 0 0 1 0 11.6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
+        </span>
+        <h2>No sounds yet</h2>
+        <p>Tap the + button to add your first sound.</p>
+      </section>
+      <section id="sound-grid" class="grid" aria-live="polite"></section>
+    </main>
+
+    <button id="add-btn" class="add" type="button" aria-label="Add sound">
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+      </svg>
+    </button>
+
+    <label class="sr-only" for="file-input">Add sound files</label>
+    <input id="file-input" class="sr-only" type="file" accept="audio/*" multiple />
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <noscript>This soundboard needs JavaScript to store and play sounds.</noscript>
+
+    <script>
+      (function () {
+        "use strict";
+
+        var DB_NAME = "soundpanel";
+        var DB_VERSION = 1;
+        var STORE = "sounds";
+
+        var SPEAKER =
+          '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">' +
+          '<path d="M4 9.2v5.6a1 1 0 0 0 1 1H7.6L12 19.2V4.8L7.6 8.2H5a1 1 0 0 0-1 1Z" fill="currentColor"/>' +
+          '<path d="M14.6 8.6a4 4 0 0 1 0 6.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>' +
+          '<path d="M17.2 6.2a7 7 0 0 1 0 11.6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>' +
+          "</svg>";
+
+        var GRADIENTS = [
+          "linear-gradient(135deg,#7c5cff,#22d3ee)",
+          "linear-gradient(135deg,#f472b6,#fb7185)",
+          "linear-gradient(135deg,#34d399,#22d3ee)",
+          "linear-gradient(135deg,#fbbf24,#f472b6)",
+          "linear-gradient(135deg,#60a5fa,#7c5cff)",
+          "linear-gradient(135deg,#fb7185,#fbbf24)"
+        ];
+
+        var grid = document.getElementById("sound-grid");
+        var empty = document.getElementById("empty-state");
+        var countEl = document.getElementById("sound-count");
+        var statusDot = document.getElementById("status-dot");
+        var statusText = document.getElementById("status-text");
+        var toastEl = document.getElementById("toast");
+        var fileInput = document.getElementById("file-input");
+        var addBtn = document.getElementById("add-btn");
+        var themeColor = document.querySelector('meta[name="theme-color"]');
+
+        var db = null;
+        var sounds = [];
+        var audio = new Audio();
+        audio.preload = "auto";
+        var currentUrl = null;
+        var currentId = null;
+        var currentEl = null;
+        var toastTimer = null;
+
+        function noop() {}
+
+        function uuid() {
+          if (window.crypto && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+          return "s-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2);
+        }
+
+        function openDB() {
+          return new Promise(function (resolve, reject) {
+            var req = indexedDB.open(DB_NAME, DB_VERSION);
+            req.onupgradeneeded = function () {
+              var d = req.result;
+              if (!d.objectStoreNames.contains(STORE)) d.createObjectStore(STORE, { keyPath: "id" });
+            };
+            req.onsuccess = function () { resolve(req.result); };
+            req.onerror = function () { reject(req.error); };
+          });
+        }
+
+        function tx(mode, fn) {
+          return new Promise(function (resolve, reject) {
+            var t = db.transaction(STORE, mode);
+            var out = fn(t.objectStore(STORE));
+            t.oncomplete = function () { resolve(out && out.result); };
+            t.onerror = function () { reject(t.error); };
+          });
+        }
+
+        function getAll() {
+          return tx("readonly", function (store) { return store.getAll(); });
+        }
+
+        function put(sound) {
+          return tx("readwrite", function (store) { return store.put(sound); });
+        }
+
+        function showToast(msg) {
+          toastEl.textContent = msg;
+          toastEl.classList.add("show");
+          clearTimeout(toastTimer);
+          toastTimer = setTimeout(function () { toastEl.classList.remove("show"); }, 2400);
+        }
+
+        function setStatus(online) {
+          statusText.textContent = online ? "Online" : "Offline";
+          statusDot.classList.toggle("offline", !online);
+        }
+
+        function setCount() {
+          countEl.textContent = sounds.length === 1 ? "1 sound" : sounds.length + " sounds";
+        }
+
+        function render() {
+          grid.textContent = "";
+          sounds.forEach(function (sound, i) {
+            var btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "sound";
+            btn.setAttribute("aria-label", "Play " + sound.name);
+
+            var icon = document.createElement("span");
+            icon.className = "sound-icon";
+            icon.style.background = GRADIENTS[i % GRADIENTS.length];
+            icon.innerHTML = SPEAKER;
+
+            var eq = document.createElement("span");
+            eq.className = "eq";
+            eq.setAttribute("aria-hidden", "true");
+            eq.innerHTML = "<span></span><span></span><span></span>";
+
+            var name = document.createElement("span");
+            name.className = "sound-name";
+            name.textContent = sound.name;
+
+            btn.appendChild(icon);
+            btn.appendChild(eq);
+            btn.appendChild(name);
+            btn.addEventListener("click", function () { play(sound, btn); });
+            grid.appendChild(btn);
+          });
+          empty.classList.toggle("visible", sounds.length === 0);
+          setCount();
+        }
+
+        function play(sound, btn) {
+          if (!sound.blob) return;
+          if (currentId === sound.id) {
+            audio.currentTime = 0;
+            audio.play().catch(noop);
+            return;
+          }
+          if (currentEl) currentEl.classList.remove("playing");
+          if (currentUrl) URL.revokeObjectURL(currentUrl);
+          currentUrl = URL.createObjectURL(sound.blob);
+          currentId = sound.id;
+          currentEl = btn;
+          audio.src = currentUrl;
+          audio.play().catch(noop);
+        }
+
+        audio.addEventListener("playing", function () {
+          if (currentEl) currentEl.classList.add("playing");
+        });
+
+        audio.addEventListener("pause", function () {
+          if (currentEl && !audio.ended) currentEl.classList.remove("playing");
+        });
+
+        audio.addEventListener("ended", function () {
+          if (currentEl) currentEl.classList.remove("playing");
+          if (currentUrl) URL.revokeObjectURL(currentUrl);
+          currentUrl = null;
+          currentId = null;
+          currentEl = null;
+          audio.removeAttribute("src");
+        });
+
+        function addFiles(files) {
+          if (!files || !files.length) return Promise.resolve(0);
+          var list = Array.prototype.slice.call(files);
+          return list.reduce(function (chain, file) {
+            return chain.then(function () {
+              return put({
+                id: uuid(),
+                name: file.name,
+                type: file.type || "audio",
+                blob: file,
+                savedAt: Date.now()
+              });
+            });
+          }, Promise.resolve()).then(function () {
+            return list.length;
+          });
+        }
+
+        function refresh() {
+          return getAll().then(function (all) {
+            sounds = all.sort(function (a, b) { return a.savedAt - b.savedAt; });
+            render();
+          });
+        }
+
+        function handleFiles(files) {
+          addFiles(files).then(function (n) {
+            if (!n) return;
+            fileInput.value = "";
+            return refresh().then(function () {
+              showToast(n === 1 ? "Added " + files[0].name : "Added " + n + " sounds");
+            });
+          }).catch(function () {
+            fileInput.value = "";
+            refresh().then(function () {
+              showToast("Could not save some sounds");
+            });
+          });
+        }
+
+        addBtn.addEventListener("click", function () { fileInput.click(); });
+
+        fileInput.addEventListener("change", function () {
+          handleFiles(fileInput.files);
+        });
+
+        ["dragenter", "dragover"].forEach(function (evt) {
+          document.addEventListener(evt, function (e) { e.preventDefault(); });
+        });
+
+        document.addEventListener("drop", function (e) {
+          e.preventDefault();
+          if (e.dataTransfer && e.dataTransfer.files) handleFiles(e.dataTransfer.files);
+        });
+
+        window.addEventListener("online", function () { setStatus(true); });
+        window.addEventListener("offline", function () { setStatus(false); });
+        setStatus(navigator.onLine);
+
+        function syncThemeColor() {
+          if (!themeColor) return;
+          var light = window.matchMedia("(prefers-color-scheme: light)").matches;
+          themeColor.content = light ? "#eef1f7" : "#0b0e14";
+        }
+        window.matchMedia("(prefers-color-scheme: light)").addEventListener("change", syncThemeColor);
+        syncThemeColor();
+
+        function registerSW() {
+          if ("serviceWorker" in navigator) {
+            navigator.serviceWorker.register("/sw.js").catch(function (err) {
+              console.warn("Service worker registration failed:", err);
+            });
+          }
+        }
+
+        openDB().then(function (database) {
+          db = database;
+          return refresh();
+        }).catch(function (err) {
+          console.error(err);
+          showToast("Could not open local storage");
+        });
+
+        registerSW();
+      })();
+    </script>
+  </body>
+</html>
