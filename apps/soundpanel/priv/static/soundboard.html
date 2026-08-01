@@ -71,6 +71,15 @@
 
       h1 { font-size: 1.4rem; font-weight: 800; letter-spacing: -0.03em; }
 
+      h1 .version {
+        margin-left: 0.4rem;
+        font-size: 0.68rem;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        vertical-align: middle;
+        color: var(--text-dim);
+      }
+
       .sub { margin-top: 0.15rem; font-size: 0.78rem; font-weight: 500; color: var(--text-dim); }
 
       .status {
@@ -550,7 +559,7 @@
     <div id="board-view">
       <header>
         <div>
-          <h1>Soundpanel</h1>
+          <h1>Soundpanel <span class="version">v1.4</span></h1>
           <p class="sub" id="sound-count">0 sounds</p>
         </div>
         <div class="status">
@@ -725,6 +734,7 @@
         var abortSave = false;
         var recordStartedAt = 0;
         var recTimer = null;
+        var audioCtx = null;
 
         function noop() {}
 
@@ -1218,6 +1228,105 @@
           }
         }
 
+        function getAudioContext() {
+          if (!audioCtx) {
+            var Ctx = window.AudioContext || window.webkitAudioContext;
+            if (Ctx) audioCtx = new Ctx();
+          }
+          return audioCtx;
+        }
+
+        function encodeWav(buffer) {
+          var numCh = buffer.numberOfChannels;
+          var sampleRate = buffer.sampleRate;
+          var len = buffer.length;
+          var blockAlign = numCh * 2;
+          var dataSize = len * blockAlign;
+          var arrayBuffer = new ArrayBuffer(44 + dataSize);
+          var view = new DataView(arrayBuffer);
+
+          function writeString(offset, str) {
+            for (var i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+          }
+
+          writeString(0, "RIFF");
+          view.setUint32(4, 36 + dataSize, true);
+          writeString(8, "WAVE");
+          writeString(12, "fmt ");
+          view.setUint32(16, 16, true);
+          view.setUint16(20, 1, true);
+          view.setUint16(22, numCh, true);
+          view.setUint32(24, sampleRate, true);
+          view.setUint32(28, sampleRate * blockAlign, true);
+          view.setUint16(32, blockAlign, true);
+          view.setUint16(34, 16, true);
+          writeString(36, "data");
+          view.setUint32(40, dataSize, true);
+
+          var channels = [];
+          for (var c = 0; c < numCh; c++) channels.push(buffer.getChannelData(c));
+
+          var offset = 44;
+          for (var i = 0; i < len; i++) {
+            for (var c = 0; c < numCh; c++) {
+              var sample = Math.max(-1, Math.min(1, channels[c][i]));
+              view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true);
+              offset += 2;
+            }
+          }
+          return new Blob([arrayBuffer], { type: "audio/wav" });
+        }
+
+        function trimSilence(blob) {
+          var ctx = getAudioContext();
+          if (!ctx) return Promise.resolve(null);
+          return blob.arrayBuffer().then(function (buf) {
+            return ctx.decodeAudioData(buf);
+          }).then(function (audioBuf) {
+            var numCh = audioBuf.numberOfChannels;
+            var length = audioBuf.length;
+            var threshold = 0.012;
+            var block = 2048;
+            var margin = block * 2;
+            var channels = [];
+            for (var c = 0; c < numCh; c++) channels.push(audioBuf.getChannelData(c));
+
+            var first = -1;
+            var last = -1;
+            for (var s = 0; s < length; s += block) {
+              var peak = 0;
+              var e = Math.min(s + block, length);
+              for (var c = 0; c < numCh; c++) {
+                var data = channels[c];
+                for (var i = s; i < e; i++) {
+                  var v = Math.abs(data[i]);
+                  if (v > peak) peak = v;
+                }
+              }
+              if (peak > threshold) {
+                if (first < 0) first = s;
+                last = s;
+              }
+            }
+
+            if (first < 0 || last < 0) return null;
+
+            var start = Math.max(0, first - margin);
+            var end = Math.min(length, last + block + margin);
+            if (end - start < 128) return null;
+
+            var trimmed = ctx.createBuffer(numCh, end - start, audioBuf.sampleRate);
+            for (var c = 0; c < numCh; c++) {
+              var src = channels[c];
+              var dst = trimmed.getChannelData(c);
+              for (var i = start; i < end; i++) dst[i - start] = src[i];
+            }
+            return encodeWav(trimmed);
+          }).catch(function () {
+            return null;
+          });
+        }
+
         function finishRecording() {
           if (stream) {
             stream.getTracks().forEach(function (t) { t.stop(); });
@@ -1235,7 +1344,10 @@
           var blob = new Blob(chunks, { type: recordingType || "audio/webm" });
           chunks = [];
           var name = "Recording " + formatClock(new Date(recordStartedAt));
-          put({ id: uuid(), name: name, type: blob.type || "audio/webm", blob: blob, savedAt: Date.now() })
+          trimSilence(blob).then(function (trimmed) {
+            var recBlob = trimmed || blob;
+            return put({ id: uuid(), name: name, type: recBlob.type || "audio/webm", blob: recBlob, savedAt: Date.now() });
+          })
             .then(function () { return refresh(); })
             .then(function () { showToast("Saved " + name); })
             .catch(function () { showToast("Could not save recording"); });
