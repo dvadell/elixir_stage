@@ -10,10 +10,24 @@ defmodule SoundpanelWeb.Router do
     plug :put_secure_browser_headers
   end
 
+  # Handles Android's Web Share Target POST. The browser that launches the
+  # share intent has no CSRF token, and the endpoint does no server-side
+  # state changes, so it deliberately skips CSRF protection.
+  pipeline :share do
+    plug :put_secure_browser_headers
+  end
+
   scope "/", SoundpanelWeb do
     pipe_through :browser
 
     get "/", PageController, :home
+  end
+
+  scope "/", SoundpanelWeb do
+    pipe_through :share
+
+    get "/share", ShareController, :index
+    post "/share", ShareController, :create
   end
 
   # Other scopes may use custom stacks.

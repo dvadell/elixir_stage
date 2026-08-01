@@ -1,5 +1,5 @@
 var SHELL = "/soundboard.html";
-var CACHE = "soundpanel-shell-v2";
+var CACHE = "soundpanel-shell-v3";
 var PRECACHE = [
   "/soundboard.html",
   "/manifest.webmanifest",

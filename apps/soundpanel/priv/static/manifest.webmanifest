@@ -10,6 +10,22 @@
   "background_color": "#0b0e14",
   "theme_color": "#0b0e14",
   "categories": ["entertainment", "utilities"],
+  "share_target": {
+    "action": "/share",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url",
+      "files": [
+        {
+          "name": "files",
+          "accept": ["audio/*", "application/octet-stream"]
+        }
+      ]
+    }
+  },
   "icons": [
     {
       "src": "/icons/icon-192.png",

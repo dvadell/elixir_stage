@@ -536,7 +536,7 @@
             </svg>
           </span>
           <h2>No sounds yet</h2>
-          <p>Hold the mic button to record, or tap + to add sounds.</p>
+          <p>Hold the mic button to record, tap + to add sounds, or share audio here from other apps.</p>
         </section>
         <section id="sound-grid" class="grid" aria-live="polite"></section>
       </main>
@@ -754,6 +754,14 @@
         function setCount() {
           var n = sounds.length;
           countEl.textContent = (n === 1 ? "1 sound" : n + " sounds") + (n > 0 ? " · hold to edit" : "");
+        }
+
+        function handleShareNotice() {
+          var m = location.search.match(/[?&]shared=(\d+)/);
+          if (!m) return;
+          var n = parseInt(m[1], 10);
+          if (history.replaceState) history.replaceState(null, "", location.pathname + location.hash);
+          showToast(n === 1 ? "Added 1 shared sound" : "Added " + n + " shared sounds");
         }
 
         function render() {
@@ -1234,6 +1242,7 @@
           return refresh();
         }).then(function () {
           renderRoute();
+          handleShareNotice();
         }).catch(function (err) {
           console.error(err);
           showToast("Could not open local storage");
