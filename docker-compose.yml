@@ -1,0 +1,26 @@
+name: elixir_stage
+
+services:
+  soundpanel:
+    image: ghcr.io/dvadell/elixir_stage:d2030b705ccb854a882d0cd6c680a52a525ab760
+    container_name: soundpanel
+    restart: unless-stopped
+    ports:
+      - "4001:4001"
+    environment:
+      PORT: "4001"
+      # The app only runs its server in prod when this is set; the image already sets it,
+      # but it's listed here for clarity.
+      PHX_SERVER: "true"
+      # Use a value from your shell if set, otherwise fall back to a local-only dev secret.
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE:-746983425861a255babdb4afd41adcf443965d25d7badb947b9475342c3d3e14}
+      # Keep this as localhost: the prod config force-SSLs every host except
+      # "localhost"/"127.0.0.1", so browse to http://localhost:4001.
+      # Set it to your machine's LAN IP if you want to reach it from other devices.
+      PHX_HOST: localhost
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/4001'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
