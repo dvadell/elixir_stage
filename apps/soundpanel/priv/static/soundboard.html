@@ -559,7 +559,7 @@
     <div id="board-view">
       <header>
         <div>
-          <h1>Soundpanel <span class="version">v1.4</span></h1>
+          <h1>Soundpanel <span class="version">v1.5</span></h1>
           <p class="sub" id="sound-count">0 sounds</p>
         </div>
         <div class="status">
@@ -1189,6 +1189,7 @@
           clearInterval(recTimer);
           recTimer = setInterval(updateRecTime, 250);
           stopPlayback();
+          playRecordBeep();
 
           navigator.mediaDevices.getUserMedia({ audio: true }).then(function (s) {
             if (!recording) {
@@ -1234,6 +1235,26 @@
             if (Ctx) audioCtx = new Ctx();
           }
           return audioCtx;
+        }
+
+        function playRecordBeep() {
+          var ctx = getAudioContext();
+          if (!ctx) return;
+          if (ctx.state === "suspended") ctx.resume();
+          var now = ctx.currentTime;
+          var gain = ctx.createGain();
+          gain.gain.setValueAtTime(0.0001, now);
+          gain.gain.exponentialRampToValueAtTime(0.4, now + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
+          gain.connect(ctx.destination);
+
+          var osc = ctx.createOscillator();
+          osc.type = "sine";
+          osc.frequency.setValueAtTime(880, now);
+          osc.frequency.exponentialRampToValueAtTime(1174, now + 0.25);
+          osc.connect(gain);
+          osc.start(now);
+          osc.stop(now + 0.4);
         }
 
         function encodeWav(buffer) {
