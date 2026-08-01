@@ -7,7 +7,6 @@ defmodule Soundpanel.Application do
   def start(_type, _args) do
     children = [
       SoundpanelWeb.Telemetry,
-      Soundpanel.Repo,
       {DNSCluster, query: Application.get_env(:soundpanel, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Soundpanel.PubSub},
       # Start a worker by calling: Soundpanel.Worker.start_link(arg)

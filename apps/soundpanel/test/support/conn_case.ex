@@ -2,10 +2,7 @@ defmodule SoundpanelWeb.ConnCase do
   @moduledoc """
   Sets up test cases that need an HTTP connection.
 
-  Uses `Phoenix.ConnTest` for building connections and queries the data layer.
-  Enables the SQL sandbox so changes are reverted at the end of every test.
-  For PostgreSQL, you can run database tests asynchronously by setting
-  `use SoundpanelWeb.ConnCase, async: true`.
+  Uses `Phoenix.ConnTest` for building connections.
   """
 
   use ExUnit.CaseTemplate
@@ -24,8 +21,7 @@ defmodule SoundpanelWeb.ConnCase do
     end
   end
 
-  setup tags do
-    Soundpanel.DataCase.setup_sandbox(tags)
+  setup _tags do
     {:ok, conn: Phoenix.ConnTest.build_conn()}
   end
 end

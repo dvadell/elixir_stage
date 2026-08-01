@@ -16,10 +16,6 @@
 # General application configuration
 import Config
 
-config :soundpanel,
-  ecto_repos: [Soundpanel.Repo],
-  generators: [timestamp_type: :utc_datetime]
-
 # Configure the endpoint
 config :soundpanel, SoundpanelWeb.Endpoint,
   url: [host: "localhost"],
