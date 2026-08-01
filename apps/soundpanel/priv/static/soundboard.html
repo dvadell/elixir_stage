@@ -232,29 +232,88 @@
       .empty h2 { margin-bottom: 0.3rem; font-size: 1.05rem; font-weight: 700; color: var(--text); }
       .empty p { font-size: 0.85rem; line-height: 1.5; }
 
-      .add {
+      .fab-group {
         position: fixed;
         right: max(1.35rem, env(safe-area-inset-right));
         bottom: calc(1.6rem + env(safe-area-inset-bottom, 0px));
         z-index: 20;
+        display: flex;
+        align-items: flex-end;
+        gap: 0.9rem;
+      }
+
+      .add,
+      .record {
         display: grid;
         place-items: center;
         width: 4.5rem;
         height: 4.5rem;
         border: none;
         border-radius: 50%;
-        background: var(--grad);
         color: var(--on-accent);
         cursor: pointer;
         box-shadow: 0 16px 34px -12px rgba(124, 92, 255, 0.95), 0 6px 16px -6px rgba(0, 0, 0, 0.6);
         transition: transform 0.18s ease, box-shadow 0.22s ease;
       }
 
-      .add:hover { transform: translateY(-3px) scale(1.04); box-shadow: 0 22px 44px -14px rgba(124, 92, 255, 1); }
-      .add:active { transform: scale(0.9); }
-      .add:focus-visible { outline: 3px solid var(--accent-2); outline-offset: 3px; }
+      .add { background: var(--grad); }
+
+      .record {
+        background: linear-gradient(135deg, #f43f5e, #fb7185);
+        box-shadow: 0 16px 34px -12px rgba(244, 63, 94, 0.9), 0 6px 16px -6px rgba(0, 0, 0, 0.6);
+        touch-action: none;
+        -webkit-touch-callout: none;
+        user-select: none;
+      }
+
+      .add:hover, .record:hover { transform: translateY(-3px) scale(1.04); }
+      .add:active, .record:active { transform: scale(0.9); }
+      .add:focus-visible, .record:focus-visible { outline: 3px solid var(--accent-2); outline-offset: 3px; }
+      .add:hover { box-shadow: 0 22px 44px -14px rgba(124, 92, 255, 1); }
+      .record:hover { box-shadow: 0 22px 44px -14px rgba(244, 63, 94, 1); }
 
       .add svg { width: 1.9rem; height: 1.9rem; }
+      .record svg { width: 1.8rem; height: 1.8rem; }
+
+      .record.recording { animation: record-pulse 1.3s ease-out infinite; }
+
+      @keyframes record-pulse {
+        0% { box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.55); }
+        100% { box-shadow: 0 0 0 22px rgba(244, 63, 94, 0); }
+      }
+
+      .rec-indicator {
+        display: none;
+        align-items: center;
+        gap: 0.4rem;
+        white-space: nowrap;
+      }
+
+      .record.recording .rec-indicator { display: flex; }
+      .record.recording svg { display: none; }
+
+      .rec-dot {
+        width: 0.5rem;
+        height: 0.5rem;
+        border-radius: 50%;
+        background: #ffffff;
+        box-shadow: 0 0 10px rgba(255, 255, 255, 0.8);
+        animation: rec-blink 1s ease-in-out infinite;
+      }
+
+      @keyframes rec-blink {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.25; }
+      }
+
+      .rec-time {
+        font: inherit;
+        font-size: 0.72rem;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+        letter-spacing: 0.02em;
+        color: #ffffff;
+      }
 
       .toast {
         position: fixed;
@@ -477,16 +536,29 @@
             </svg>
           </span>
           <h2>No sounds yet</h2>
-          <p>Tap the + button to add your first sound.</p>
+          <p>Hold the mic button to record, or tap + to add sounds.</p>
         </section>
         <section id="sound-grid" class="grid" aria-live="polite"></section>
       </main>
 
-      <button id="add-btn" class="add" type="button" aria-label="Add sound">
-        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
-        </svg>
-      </button>
+      <div class="fab-group">
+        <button id="record-btn" class="record" type="button" aria-label="Hold to record a sound">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M12 14.5a3.5 3.5 0 0 0 3.5-3.5V6a3.5 3.5 0 0 0-7 0v5a3.5 3.5 0 0 0 3.5 3.5Z" fill="currentColor"/>
+            <path d="M5 11v.5a7 7 0 0 0 14 0V11M12 18v3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          <span class="rec-indicator" aria-hidden="true">
+            <span class="rec-dot"></span>
+            <span class="rec-time">00:00</span>
+          </span>
+        </button>
+
+        <button id="add-btn" class="add" type="button" aria-label="Add sound">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
 
       <label class="sr-only" for="file-input">Add sound files</label>
       <input id="file-input" class="sr-only" type="file" accept="audio/*" multiple />
@@ -584,6 +656,8 @@
         var toastEl = document.getElementById("toast");
         var fileInput = document.getElementById("file-input");
         var addBtn = document.getElementById("add-btn");
+        var recordBtn = document.getElementById("record-btn");
+        var recTimeEl = recordBtn.querySelector(".rec-time");
         var themeColor = document.querySelector('meta[name="theme-color"]');
         var boardView = document.getElementById("board-view");
         var editView = document.getElementById("edit-view");
@@ -606,6 +680,14 @@
         var editingId = null;
         var editingRecord = null;
         var selectedIcon = null;
+        var stream = null;
+        var mediaRecorder = null;
+        var chunks = [];
+        var recordingType = "";
+        var recording = false;
+        var abortSave = false;
+        var recordStartedAt = 0;
+        var recTimer = null;
 
         function noop() {}
 
@@ -844,6 +926,7 @@
         }
 
         function openEdit(id) {
+          endRecord();
           stopPlayback();
           var target = "/edit/" + encodeURIComponent(id);
           if (location.hash === "#" + target) {
@@ -995,6 +1078,126 @@
 
         fileInput.addEventListener("change", function () {
           handleFiles(fileInput.files);
+        });
+
+        function pad2(n) { return (n < 10 ? "0" : "") + n; }
+
+        function formatClock(date) {
+          return pad2(date.getHours()) + ":" + pad2(date.getMinutes()) + ":" + pad2(date.getSeconds());
+        }
+
+        function updateRecTime() {
+          var elapsed = Math.floor((Date.now() - recordStartedAt) / 1000);
+          recTimeEl.textContent = pad2(Math.floor(elapsed / 60)) + ":" + pad2(elapsed % 60);
+        }
+
+        function pickRecorderType() {
+          var types = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"];
+          for (var i = 0; i < types.length; i++) {
+            if (window.MediaRecorder && MediaRecorder.isTypeSupported(types[i])) return types[i];
+          }
+          return "";
+        }
+
+        function beginRecord() {
+          if (recording) return;
+          if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
+            showToast("Recording is not supported here");
+            return;
+          }
+          recording = true;
+          abortSave = false;
+          chunks = [];
+          recordingType = "";
+          recordStartedAt = Date.now();
+          recTimeEl.textContent = "00:00";
+          recordBtn.classList.add("recording");
+          clearInterval(recTimer);
+          recTimer = setInterval(updateRecTime, 250);
+          stopPlayback();
+
+          navigator.mediaDevices.getUserMedia({ audio: true }).then(function (s) {
+            if (!recording) {
+              s.getTracks().forEach(function (t) { t.stop(); });
+              return;
+            }
+            stream = s;
+            recordingType = pickRecorderType();
+            mediaRecorder = new MediaRecorder(s, recordingType ? { mimeType: recordingType } : undefined);
+            mediaRecorder.ondataavailable = function (e) {
+              if (e.data && e.data.size > 0) chunks.push(e.data);
+            };
+            mediaRecorder.onstop = finishRecording;
+            mediaRecorder.onerror = function () {
+              showToast("Recording failed");
+              abortSave = true;
+              endRecord();
+            };
+            mediaRecorder.start();
+          }).catch(function () {
+            if (recording) showToast("Microphone not available");
+            endRecord();
+          });
+        }
+
+        function endRecord() {
+          if (!recording) return;
+          recording = false;
+          recordBtn.classList.remove("recording");
+          clearInterval(recTimer);
+          recTimer = null;
+          if (mediaRecorder && mediaRecorder.state === "recording") {
+            mediaRecorder.stop();
+          } else if (stream) {
+            stream.getTracks().forEach(function (t) { t.stop(); });
+            stream = null;
+          }
+        }
+
+        function finishRecording() {
+          if (stream) {
+            stream.getTracks().forEach(function (t) { t.stop(); });
+            stream = null;
+          }
+          mediaRecorder = null;
+          if (abortSave) {
+            abortSave = false;
+            return;
+          }
+          if (!chunks.length) {
+            showToast("Recording was too short");
+            return;
+          }
+          var blob = new Blob(chunks, { type: recordingType || "audio/webm" });
+          chunks = [];
+          var name = "Recording " + formatClock(new Date(recordStartedAt));
+          put({ id: uuid(), name: name, type: blob.type || "audio/webm", blob: blob, savedAt: Date.now() })
+            .then(function () { return refresh(); })
+            .then(function () { showToast("Saved " + name); })
+            .catch(function () { showToast("Could not save recording"); });
+        }
+
+        recordBtn.addEventListener("pointerdown", function (e) {
+          if (e.pointerType === "mouse" && e.button !== 0) return;
+          e.preventDefault();
+          try { recordBtn.setPointerCapture(e.pointerId); } catch (err) {}
+          beginRecord();
+        });
+        recordBtn.addEventListener("pointerup", endRecord);
+        recordBtn.addEventListener("pointercancel", endRecord);
+
+        recordBtn.addEventListener("keydown", function (e) {
+          if ((e.key === " " || e.key === "Enter") && !e.repeat) {
+            e.preventDefault();
+            beginRecord();
+          }
+        });
+        recordBtn.addEventListener("keyup", function (e) {
+          if (e.key === " " || e.key === "Enter") endRecord();
+        });
+
+        document.addEventListener("visibilitychange", function () {
+          if (document.hidden && recording) endRecord();
         });
 
         ["dragenter", "dragover"].forEach(function (evt) {
