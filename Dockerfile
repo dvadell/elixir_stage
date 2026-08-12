@@ -28,12 +28,16 @@ RUN mix deps.get --only $MIX_ENV
 # compile dependencies
 RUN mix deps.compile
 
-# build assets
+# build assets for both apps
 WORKDIR /app/apps/soundpanel
 RUN mix assets.deploy
 
-# compile and build release
-RUN mix release --overwrite
+WORKDIR /app/apps/soundai
+RUN mix assets.deploy
+
+# compile and build a single umbrella release containing both apps
+WORKDIR /app
+RUN mix release elixir_stage --overwrite
 
 # start a new build stage so that the final image contains only the compiled release and other runtime necessities
 FROM ${BUILDER_IMAGE}
@@ -52,7 +56,7 @@ ENV MIX_ENV="prod" \
     PHX_SERVER="true"
 
 # Only copy the final release from the build stage
-COPY --from=builder /app/_build/prod/rel/soundpanel ./
+COPY --from=builder /app/_build/prod/rel/elixir_stage ./
 
 # set the command to run on container start
-CMD ["/app/bin/soundpanel", "start"]
+CMD ["/app/bin/elixir_stage", "start"]

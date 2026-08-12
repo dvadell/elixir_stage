@@ -21,7 +21,7 @@ if System.get_env("PHX_SERVER") do
 end
 
 config :soundai, SoundaiWeb.Endpoint,
-  http: [port: String.to_integer(System.get_env("PORT", "4002"))]
+  http: [port: String.to_integer(System.get_env("SOUNDAI_PORT", System.get_env("PORT", "4002")))]
 
 if config_env() == :dev do
   # Reload browser tabs when matching files change.
@@ -53,7 +53,7 @@ if config_env() == :prod do
       You can generate one by calling: mix phx.gen.secret
       """
 
-  host = System.get_env("PHX_HOST") || "example.com"
+  host = System.get_env("SOUNDAI_HOST") || System.get_env("PHX_HOST") || "example.com"
 
   config :soundai, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 
@@ -140,7 +140,9 @@ if System.get_env("PHX_SERVER") do
 end
 
 config :soundpanel, SoundpanelWeb.Endpoint,
-  http: [port: String.to_integer(System.get_env("PORT", "4001"))]
+  http: [
+    port: String.to_integer(System.get_env("SOUNDPANEL_PORT", System.get_env("PORT", "4001")))
+  ]
 
 if config_env() == :dev do
   # Reload browser tabs when matching files change.
@@ -172,7 +174,7 @@ if config_env() == :prod do
       You can generate one by calling: mix phx.gen.secret
       """
 
-  host = System.get_env("PHX_HOST") || "example.com"
+  host = System.get_env("SOUNDPANEL_HOST") || System.get_env("PHX_HOST") || "example.com"
 
   config :soundpanel, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 

@@ -1,14 +1,16 @@
 name: elixir_stage
 
 services:
-  soundpanel:
+  elixir_stage:
     image: ghcr.io/dvadell/elixir_stage:latest
-    container_name: soundpanel
+    container_name: elixir_stage
     restart: unless-stopped
     ports:
       - "4001:4001"
+      - "4002:4002"
     environment:
-      PORT: "4001"
+      SOUNDPANEL_PORT: "4001"
+      SOUNDAI_PORT: "4002"
       # The app only runs its server in prod when this is set; the image already sets it,
       # but it's listed here for clarity.
       PHX_SERVER: "true"
