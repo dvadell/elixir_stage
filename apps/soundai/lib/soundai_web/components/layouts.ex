@@ -30,11 +30,15 @@ defmodule SoundaiWeb.Layouts do
     default: nil,
     doc: "the current [scope](https://phoenix.hexdocs.pm/scopes.html)"
 
+  attr :show_header, :boolean,
+    default: true,
+    doc: "set to false on pages that should render without the top navigation header"
+
   slot :inner_block, required: true
 
   def app(assigns) do
     ~H"""
-    <header class="navbar px-4 sm:px-6 lg:px-8">
+    <header :if={@show_header} class="navbar px-4 sm:px-6 lg:px-8">
       <div class="flex-1">
         <a href="/" class="flex-1 flex w-fit items-center gap-2">
           <img src={~p"/images/logo.svg"} width="36" />
@@ -48,6 +52,12 @@ defmodule SoundaiWeb.Layouts do
           </li>
           <li>
             <a href="/" class="btn btn-ghost">GitHub</a>
+          </li>
+          <li>
+            <.link navigate={~p"/settings"} class="btn btn-ghost">
+              <.icon name="hero-cog-6-tooth" class="size-4" />
+              {gettext("Settings")}
+            </.link>
           </li>
           <li>
             <.theme_toggle />

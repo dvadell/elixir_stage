@@ -15,6 +15,12 @@ defmodule SoundaiWeb.Endpoint do
     websocket: [connect_info: [session: @session_options]],
     longpoll: [connect_info: [session: @session_options]]
 
+  # Enable cross-origin isolation so onnxruntime-web can run WASM with
+  # multiple threads (SharedArrayBuffer). This makes Whisper inference on
+  # the WASM/CPU fallback several times faster. `credentialless` (instead of
+  # `require-corp`) keeps CDN model/WASM fetches working without CORP headers.
+  plug :cross_origin_isolation_headers
+
   # Serve at "/" the static files from "priv/static" directory.
   #
   # When code reloading is disabled (e.g., in production),
@@ -51,4 +57,10 @@ defmodule SoundaiWeb.Endpoint do
   plug Plug.Head
   plug Plug.Session, @session_options
   plug SoundaiWeb.Router
+
+  defp cross_origin_isolation_headers(conn, _opts) do
+    conn
+    |> Plug.Conn.put_resp_header("cross-origin-opener-policy", "same-origin")
+    |> Plug.Conn.put_resp_header("cross-origin-embedder-policy", "credentialless")
+  end
 end

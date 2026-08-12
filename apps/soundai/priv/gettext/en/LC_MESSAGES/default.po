@@ -1,0 +1,78 @@
+## "msgid"s in this file come from POT (.pot) files.
+###
+### Do not add, change, or remove "msgid"s manually here as
+### they're tied to the ones in the corresponding POT file
+### (with the same domain).
+###
+### Use "mix gettext.extract --merge" or "mix gettext.merge"
+### to merge POT files into PO files.
+msgid ""
+msgstr ""
+"Language: en\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#: lib/soundai_web/components/core_components.ex:376
+#, elixir-autogen, elixir-format
+msgid "Actions"
+msgstr ""
+
+#: lib/soundai_web/components/layouts.ex:101
+#: lib/soundai_web/components/layouts.ex:116
+#, elixir-autogen, elixir-format
+msgid "Attempting to reconnect"
+msgstr ""
+
+#: lib/soundai_web/live/home_live.ex:84
+#, elixir-autogen, elixir-format
+msgid "Hold to record"
+msgstr ""
+
+#: lib/soundai_web/live/home_live.ex:65
+#, elixir-autogen, elixir-format
+msgid "Hold to talk"
+msgstr ""
+
+#: lib/soundai_web/live/home_live.ex:66
+#, elixir-autogen, elixir-format
+msgid "Listening…"
+msgstr ""
+
+#: lib/soundai_web/live/home_live.ex:112
+#, elixir-autogen, elixir-format
+msgid "Preparing Whisper…"
+msgstr ""
+
+#: lib/soundai_web/components/layouts.ex:108
+#, elixir-autogen, elixir-format
+msgid "Something went wrong!"
+msgstr ""
+
+#: lib/soundai_web/live/home_live.ex:43
+#, elixir-autogen, elixir-format
+msgid "Something went wrong."
+msgstr ""
+
+#: lib/soundai_web/live/home_live.ex:69
+#, elixir-autogen, elixir-format
+msgid "Tap to retry"
+msgstr ""
+
+#: lib/soundai_web/live/home_live.ex:68
+#, elixir-autogen, elixir-format
+msgid "Tap to talk again"
+msgstr ""
+
+#: lib/soundai_web/live/home_live.ex:67
+#, elixir-autogen, elixir-format
+msgid "Transcribing…"
+msgstr ""
+
+#: lib/soundai_web/components/layouts.ex:93
+#, elixir-autogen, elixir-format
+msgid "We can't find the internet"
+msgstr ""
+
+#: lib/soundai_web/components/core_components.ex:82
+#, elixir-autogen, elixir-format
+msgid "close"
+msgstr ""

@@ -1,0 +1,8 @@
+{
+  "name": "soundai-assets",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "@huggingface/transformers": "^4.2.0"
+  }
+}

@@ -18,6 +18,7 @@ defmodule SoundaiWeb.Router do
     pipe_through :browser
 
     live "/", HomeLive
+    live "/settings", SettingsLive
   end
 
   # Other scopes may use custom stacks.
