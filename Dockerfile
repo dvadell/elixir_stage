@@ -6,7 +6,9 @@ ARG BUILDER_IMAGE="hexpm/elixir:${ELIXIR_VERSION}-erlang-${OTP_VERSION}-debian-$
 FROM ${BUILDER_IMAGE} AS builder
 
 # install build dependencies
-RUN apt-get update -y && apt-get install -y build-essential git \
+RUN apt-get update -y && apt-get install -y build-essential git curl \
+    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y nodejs \
     && apt-get clean && rm -f /var/lib/apt/lists/*_*
 
 # prepare build dir
@@ -31,6 +33,9 @@ RUN mix deps.compile
 # build assets for both apps
 WORKDIR /app/apps/soundpanel
 RUN mix assets.deploy
+
+WORKDIR /app/apps/soundai/assets
+RUN npm ci --omit=dev
 
 WORKDIR /app/apps/soundai
 RUN mix assets.deploy
