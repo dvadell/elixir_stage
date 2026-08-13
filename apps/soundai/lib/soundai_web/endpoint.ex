@@ -11,8 +11,7 @@ defmodule SoundaiWeb.Endpoint do
     same_site: "Lax"
   ]
 
-  socket "/live", Phoenix.LiveView.Socket,
-    websocket: [connect_info: [session: @session_options]]
+  socket "/live", Phoenix.LiveView.Socket, websocket: [connect_info: [session: @session_options]]
 
   # Enable cross-origin isolation so onnxruntime-web can run WASM with
   # multiple threads (SharedArrayBuffer). This makes Whisper inference on
