@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="csrf-token" content={get_csrf_token()} />
-    <.live_title default="Soundai" suffix=" · Phoenix Framework" phx-no-format>{assigns[:page_title]}</.live_title>
+    <title>Soundai</title>
     <link phx-track-static rel="stylesheet" href={~p"/assets/css/app.css"} />
     <script defer phx-track-static type="text/javascript" src={~p"/assets/js/app.js"}>
     </script>
@@ -38,6 +38,15 @@
     </script>
   </head>
   <body>
+    <div
+      id="offline-banner"
+      role="status"
+      class="fixed inset-x-0 top-0 z-50 hidden items-center justify-center gap-2 bg-warning/95 px-4 py-2 text-center text-sm font-semibold text-warning-content backdrop-blur"
+      hidden
+    >
+      <.icon name="hero-wifi-slash" class="size-4" />
+      <span>{gettext("Offline — speech recognition still works locally")}</span>
+    </div>
     {@inner_content}
   </body>
 </html>

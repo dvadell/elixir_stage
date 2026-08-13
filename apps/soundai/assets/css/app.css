@@ -2,13 +2,9 @@
    https://tailwindcss.com/docs/configuration */
 
 @import "tailwindcss" source(none);
-@import "phoenix-colocated/soundai/colocated.css";
 @source "../css";
 @source "../js";
 @source "../../lib/soundai_web";
-/* Required for Tailwind to automatically pick up changes in colocated CSS files in dev */
-@source "../../../../_build/dev/phoenix-colocated/soundai/*/";
-
 /* A Tailwind plugin that makes "hero-#{ICON}" classes available.
    The heroicons installation itself is managed by your mix.exs */
 @plugin "../vendor/heroicons";
@@ -99,7 +95,8 @@
 /* Use the data attribute for dark mode  */
 @custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
 
-/* Make LiveView wrapper divs transparent for layout */
-[data-phx-session], [data-phx-teleported-src] { display: contents }
+/* The `hidden` attribute must always win over daisyUI/Tailwind display
+   classes, since client-side code toggles element visibility with it. */
+[hidden] { display: none !important }
 
 /* This file is for your main application CSS */

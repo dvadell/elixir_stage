@@ -17,7 +17,7 @@ defmodule SoundaiWeb do
   those modules here.
   """
 
-  def static_paths, do: ~W(assets fonts images favicon.ico robots.txt)
+  def static_paths, do: ~W(assets fonts images favicon.ico robots.txt service_worker.js)
 
   def router do
     quote do

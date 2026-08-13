@@ -1,0 +1,97 @@
+<div
+  id="voice-assistant"
+  data-voice-assistant
+  class="relative z-0 h-dvh w-full touch-none select-none overflow-hidden"
+>
+  <div class="absolute right-4 top-4 z-30">
+    <a
+      href={~p"/settings"}
+      aria-label={gettext("Speech-to-text settings")}
+      class="flex items-center gap-2 rounded-full border border-base-300/60 bg-base-100/80 p-2.5 text-base-content/70 backdrop-blur transition hover:text-base-content"
+    >
+      <.icon name="hero-cog-6-tooth" class="size-5" />
+    </a>
+  </div>
+
+  <%!--
+    Both UI states are server-rendered and toggled by the client-side
+    `voice_assistant.js` controller, so the page never depends on a
+    websocket or server state to reflect the microphone/transcription state.
+  --%>
+  <div
+    id="model-loading"
+    class="flex h-full flex-col items-center justify-center gap-6 px-6 text-center"
+  >
+    <span class="relative flex size-16 items-center justify-center">
+      <span class="absolute inline-flex size-16 animate-ping rounded-full bg-primary/30"></span>
+      <.icon name="hero-cpu-chip" class="relative size-8 text-primary" />
+    </span>
+    <p class="flex items-center gap-3 text-sm font-semibold uppercase tracking-[0.25em]">
+      <span class="inline-block size-2.5 animate-pulse rounded-full bg-primary"></span>
+      {gettext("Loading speech model…")}
+    </p>
+    <p
+      id="model-loading-progress"
+      class="text-xs font-medium tracking-wider text-base-content/50"
+      hidden
+    >
+      {gettext("Downloading:")} <span id="model-loading-progress-value"></span>%
+    </p>
+  </div>
+
+  <button
+    id="record-button"
+    type="button"
+    aria-label={gettext("Hold to record")}
+    class="flex h-full w-full cursor-pointer items-center justify-center bg-base-100 text-base-content transition-colors duration-200 focus:outline-none"
+    hidden
+  >
+    <span class="pointer-events-none relative z-10 flex flex-col items-center gap-8 px-6">
+      <span class="relative flex items-center justify-center">
+        <span
+          id="listening-ping"
+          class="absolute inline-flex size-56 animate-ping rounded-full bg-primary/40 sm:size-72"
+          hidden
+        ></span>
+        <span id="record-icon" class="relative block">
+          <.icon
+            name="hero-microphone"
+            class="size-24 transition-transform duration-200 sm:size-32 md:size-48 lg:size-64"
+          />
+        </span>
+      </span>
+      <span class="flex flex-col items-center gap-2">
+        <span class="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.25em]">
+          <span
+            id="listening-dot"
+            class="inline-block size-2.5 animate-pulse rounded-full bg-red-500"
+            hidden
+          ></span>
+          <span id="voice-label">{gettext("Hold to talk")}</span>
+        </span>
+        <span
+          id="preparing-hint"
+          class="text-xs font-medium tracking-wider text-base-content/50"
+          hidden
+        >
+          {gettext("Preparing Whisper…")} <span id="preparing-progress"></span>%
+        </span>
+      </span>
+    </span>
+  </button>
+
+  <div
+    id="voice-result"
+    class="pointer-events-none absolute inset-x-0 bottom-6 z-20 flex justify-center px-6"
+    aria-live="polite"
+    hidden
+  >
+    <div
+      id="voice-result-box"
+      class="w-full max-w-2xl rounded-box border border-base-300 bg-base-100/90 px-6 py-5 text-center shadow-lg backdrop-blur"
+    >
+      <p id="voice-error" class="hidden font-medium text-error"></p>
+      <p id="voice-transcript" class="hidden text-lg font-medium leading-relaxed"></p>
+    </div>
+  </div>
+</div>

@@ -5,16 +5,34 @@
 //   * Capture microphone audio as raw PCM (only while the user holds the button).
 //   * Resample captured audio to 16 kHz mono so Whisper can consume it.
 //   * Drive the Whisper worker, reusing the loaded model across utterances.
-//   * Keep the LiveView in sync (idle / listening / transcribing / error / result)
-//     and log every transcript to the browser console.
+//   * Render the whole assistant UI (loading / listening / transcribing /
+//     error / result) directly in the browser.
 //
-// Raw microphone audio never leaves the browser: transcription runs locally
-// through `whisper_worker.js` (Transformers.js + Whisper) on WebGPU or WASM.
+// This module is fully client-side and offline-first: it does not talk to the
+// Phoenix backend at all. Raw microphone audio never leaves the browser:
+// transcription runs locally through `whisper_worker.js` (Transformers.js +
+// Whisper) on WebGPU or WASM. As long as the page shell and the speech model
+// are already cached, the assistant keeps working with no network at all.
 
 import { WHISPER_CONFIG } from "./whisper_config.js";
 
-export const VoiceAssistant = {
-  mounted() {
+const RECORD_BUTTON_BASE =
+  "flex h-full w-full cursor-pointer items-center justify-center transition-colors duration-200 focus:outline-none";
+const RECORD_BUTTON_LISTENING = "bg-primary text-primary-content";
+const RECORD_BUTTON_IDLE = "bg-base-100 text-base-content";
+
+export function mountVoiceAssistant() {
+  const el = document.getElementById("voice-assistant");
+  if (!el || el.dataset.vaMounted) return;
+  el.dataset.vaMounted = "true";
+
+  const controller = new VoiceAssistantController(el);
+  controller.start();
+}
+
+class VoiceAssistantController {
+  constructor(el) {
+    this.el = el;
     this.state = "idle";
     this.worker = null;
     this.workerInit = null;
@@ -31,21 +49,45 @@ export const VoiceAssistant = {
     this.lastForwardedProgress = 0;
     this.ready = false;
     this.preloading = false;
+    this.transcript = null;
+    this.error = null;
+    this.progress = null;
     this.config = this.resolveConfig();
 
     this.onPointerDown = this.onPointerDown.bind(this);
     this.onPointerUp = this.onPointerUp.bind(this);
 
+    // DOM nodes driven by the state machine.
+    this.ui = {
+      loadingScreen: document.getElementById("model-loading"),
+      recordButton: document.getElementById("record-button"),
+      voiceLabel: document.getElementById("voice-label"),
+      listeningPing: document.getElementById("listening-ping"),
+      listeningDot: document.getElementById("listening-dot"),
+      recordIcon: document.getElementById("record-icon"),
+      preparingHint: document.getElementById("preparing-hint"),
+      preparingProgress: document.getElementById("preparing-progress"),
+      loadingProgress: document.getElementById("model-loading-progress"),
+      loadingProgressValue: document.getElementById("model-loading-progress-value"),
+      resultBox: document.getElementById("voice-result"),
+      resultBoxInner: document.getElementById("voice-result-box"),
+      errorText: document.getElementById("voice-error"),
+      transcriptText: document.getElementById("voice-transcript"),
+    };
+  }
+
+  start() {
     this.el.addEventListener("pointerdown", this.onPointerDown);
     this.el.addEventListener("pointerup", this.onPointerUp);
     this.el.addEventListener("pointercancel", this.onPointerUp);
 
     // Load the selected model before the microphone button is shown, so using
     // the assistant never waits on the download.
+    this.setState("loading");
     this.preload();
-  },
+  }
 
-  destroyed() {
+  stop() {
     this.el.removeEventListener("pointerdown", this.onPointerDown);
     this.el.removeEventListener("pointerup", this.onPointerUp);
     this.el.removeEventListener("pointercancel", this.onPointerUp);
@@ -54,13 +96,13 @@ export const VoiceAssistant = {
       this.worker.terminate();
       this.worker = null;
     }
-  },
+  }
 
   // ---------------------------------------------------------------- helpers
 
   log(...args) {
     console.log("[soundai]", ...args);
-  },
+  }
 
   // The model/language can be overridden per session for benchmarking via URL
   // search params, or persistently via a cookie written by the /settings page,
@@ -73,7 +115,7 @@ export const VoiceAssistant = {
       language:
         params.get("language") || this.readCookie("soundai_language") || WHISPER_CONFIG.language,
     };
-  },
+  }
 
   readCookie(name) {
     const prefix = `${name}=`;
@@ -83,22 +125,20 @@ export const VoiceAssistant = {
       }
     }
     return null;
-  },
+  }
 
   setState(state) {
     this.state = state;
-  },
-
-  pushState(payload) {
-    this.pushEvent("voice_state", payload);
-  },
+    this.render();
+  }
 
   fail(message, details) {
     console.error("[soundai] error:", message, details ?? "");
+    this.error = message;
+    this.transcript = null;
     this.setState("error");
     this.teardownAudio();
-    this.pushState({ state: "error", error: message, device: this.device });
-  },
+  }
 
   friendlyMicError(err) {
     const name = err?.name;
@@ -112,7 +152,103 @@ export const VoiceAssistant = {
       return "The microphone is already in use by another application.";
     }
     return err?.message || "Unable to access the microphone.";
-  },
+  }
+
+  // ------------------------------------------------------------- ui rendering
+
+  setHidden(node, hidden) {
+    if (node) node.hidden = hidden;
+  }
+
+  render() {
+    const ui = this.ui;
+    const state = this.state;
+    const loading = state === "loading";
+    const listening = state === "listening";
+    const transcribing = state === "transcribing";
+
+    this.setHidden(ui.loadingScreen, !loading);
+
+    if (!loading) {
+      this.setHidden(ui.recordButton, false);
+      this.renderRecordButton(listening);
+      ui.voiceLabel.textContent = this.voiceLabel();
+      this.setHidden(ui.listeningPing, !listening);
+      this.setHidden(ui.listeningDot, !listening);
+      if (ui.recordIcon) {
+        ui.recordIcon.classList.toggle("scale-110", listening);
+      }
+      this.renderPreparingHint(listening || transcribing);
+    } else {
+      this.setHidden(ui.recordButton, true);
+      this.renderLoadingProgress();
+    }
+
+    this.renderResult();
+  }
+
+  renderRecordButton(listening) {
+    const button = this.ui.recordButton;
+    if (!button) return;
+    button.className = [
+      RECORD_BUTTON_BASE,
+      listening ? RECORD_BUTTON_LISTENING : RECORD_BUTTON_IDLE,
+    ].join(" ");
+  }
+
+  renderLoadingProgress() {
+    const value = this.progress;
+    const visible = typeof value === "number" && value > 0 && value < 100;
+    this.setHidden(this.ui.loadingProgress, !visible);
+    if (visible && this.ui.loadingProgressValue) {
+      this.ui.loadingProgressValue.textContent = String(value);
+    }
+  }
+
+  renderPreparingHint(active) {
+    const value = this.progress;
+    const visible = active && typeof value === "number" && value > 0 && value < 100;
+    this.setHidden(this.ui.preparingHint, !visible);
+    if (visible && this.ui.preparingProgress) {
+      this.ui.preparingProgress.textContent = String(value);
+    }
+  }
+
+  renderResult() {
+    const error = this.error;
+    const transcript = this.transcript;
+    const visible = Boolean(error || transcript);
+    this.setHidden(this.ui.resultBox, !visible);
+    if (!visible) return;
+
+    const errorMode = Boolean(error);
+    this.setHidden(this.ui.errorText, !errorMode);
+    this.setHidden(this.ui.transcriptText, errorMode);
+    if (errorMode) {
+      this.ui.errorText.textContent = error;
+      this.ui.resultBoxInner.className =
+        "w-full max-w-2xl rounded-box border border-error/40 bg-base-100/90 px-6 py-5 text-center shadow-lg backdrop-blur";
+    } else {
+      this.ui.transcriptText.textContent = transcript;
+      this.ui.resultBoxInner.className =
+        "w-full max-w-2xl rounded-box border border-base-300 bg-base-100/90 px-6 py-5 text-center shadow-lg backdrop-blur";
+    }
+  }
+
+  voiceLabel() {
+    switch (this.state) {
+      case "listening":
+        return "Listening…";
+      case "transcribing":
+        return "Transcribing…";
+      case "result":
+        return "Tap to talk again";
+      case "error":
+        return "Tap to retry";
+      default:
+        return "Hold to talk";
+    }
+  }
 
   // --------------------------------------------------------------- whisper
 
@@ -127,7 +263,7 @@ export const VoiceAssistant = {
     });
     this.worker = worker;
     return worker;
-  },
+  }
 
   async detectDevice() {
     if (navigator.gpu) {
@@ -143,7 +279,7 @@ export const VoiceAssistant = {
     }
     this.log("WebGPU is unavailable, using WASM/CPU");
     return "wasm";
-  },
+  }
 
   // Preloads the Whisper model (the one selected in /settings, or the config
   // default) before the record button becomes interactive. Model loading is
@@ -152,8 +288,8 @@ export const VoiceAssistant = {
     if (this.ready || this.preloading) return;
     this.preloading = true;
     this.lastForwardedProgress = 0;
+    this.progress = 0;
     this.setState("loading");
-    this.pushState({ state: "loading", progress: 0 });
     try {
       await this.ensureInit();
     } catch (_err) {
@@ -162,7 +298,7 @@ export const VoiceAssistant = {
     } finally {
       this.preloading = false;
     }
-  },
+  }
 
   // Initializes the Whisper pipeline once and reuses it for every utterance.
   ensureInit() {
@@ -187,7 +323,7 @@ export const VoiceAssistant = {
       });
 
     return this.workerInit;
-  },
+  }
 
   onWorkerMessage(message) {
     switch (message?.type) {
@@ -197,12 +333,13 @@ export const VoiceAssistant = {
       case "ready":
         this.log(`Whisper ready on ${message.device}`);
         this.ready = true;
+        this.progress = 100;
         if (this.state === "loading") {
+          this.error = null;
           this.setState("idle");
-          this.pushState({ state: "idle" });
         } else if (this.state === "listening" || this.state === "transcribing") {
           // Hide the "Preparing Whisper…" hint now that loading finished.
-          this.pushState({ state: this.state, progress: 100 });
+          this.render();
         }
         break;
       case "fallback":
@@ -222,7 +359,7 @@ export const VoiceAssistant = {
       default:
         console.warn("[soundai] unknown worker message:", message);
     }
-  },
+  }
 
   onModelProgress(progress) {
     const percent = Math.round(progress.progress ?? 0);
@@ -233,22 +370,20 @@ export const VoiceAssistant = {
     // Surface coarse download progress so the UI can show it on the loading
     // screen or while the first transcription is warming up.
     const overall = progress.status === "progress_total" ? Math.round(progress.progress ?? 0) : percent;
-    if (
-      (this.state === "loading" || this.state === "listening" || this.state === "transcribing") &&
-      overall > 0 &&
-      overall < 100
-    ) {
-      this.pushState({ state: this.state, progress: overall });
+    if (overall > 0 && overall < 100) {
+      this.progress = overall;
+      this.render();
     }
-  },
+  }
 
   handleResult(message) {
     const text = (message.text || "").trim();
 
     if (!text) {
       this.log("no speech detected");
+      this.error = null;
+      this.transcript = null;
       this.setState("idle");
-      this.pushState({ state: "idle" });
       return;
     }
 
@@ -257,9 +392,10 @@ export const VoiceAssistant = {
       device: message.device,
       inferenceMs: message.inferenceMs,
     });
+    this.transcript = text;
+    this.error = null;
     this.setState("result");
-    this.pushState({ state: "result", transcript: text, device: message.device });
-  },
+  }
 
   // ----------------------------------------------------------- microphone
 
@@ -296,7 +432,7 @@ export const VoiceAssistant = {
     if (this.audioContext.state === "suspended") {
       await this.audioContext.resume();
     }
-  },
+  }
 
   async stopCapture() {
     const duration = performance.now() - this.recordingStarted;
@@ -312,7 +448,7 @@ export const VoiceAssistant = {
       return samples;
     }
     return resampleAudio(samples, this.sampleRate, 16000);
-  },
+  }
 
   teardownAudio() {
     if (this.sourceNode) {
@@ -339,15 +475,15 @@ export const VoiceAssistant = {
       this.stream.getTracks().forEach((track) => track.stop());
       this.stream = null;
     }
-  },
+  }
 
   // ------------------------------------------------------------ interactions
 
   async onPointerDown(event) {
     event.preventDefault();
-    // The hook sits on the page container, so skip presses that start on the
-    // settings link (or any other anchor) to avoid starting a recording when
-    // the user navigates away.
+    // The controller sits on the page container, so skip presses that start on
+    // the settings link (or any other anchor) to avoid starting a recording
+    // when the user navigates away.
     if (event.target.closest("a")) return;
     if (this.recording || this.state === "transcribing") return;
 
@@ -360,8 +496,8 @@ export const VoiceAssistant = {
     }
 
     this.recording = true;
+    this.progress = 0;
     this.setState("listening");
-    this.pushState({ state: "listening", progress: 0 });
 
     // Model initialization is already preloaded; this call is a no-op safety
     // net in case the ready message was missed.
@@ -376,7 +512,7 @@ export const VoiceAssistant = {
       this.recording = false;
       this.fail(this.friendlyMicError(err));
     }
-  },
+  }
 
   async onPointerUp(event) {
     event.preventDefault();
@@ -391,16 +527,16 @@ export const VoiceAssistant = {
     }
 
     if (!audio) {
+      this.error = null;
+      this.transcript = null;
       this.setState("idle");
-      this.pushState({ state: "idle" });
       this.log("utterance too short, skipping transcription");
       return;
     }
 
     this.setState("transcribing");
-    this.pushState({ state: "transcribing" });
     this.transcribe(audio);
-  },
+  }
 
   async transcribe(audio) {
     try {
@@ -413,8 +549,8 @@ export const VoiceAssistant = {
     } catch (err) {
       this.fail(`Transcription failed: ${err?.message || err}`);
     }
-  },
-};
+  }
+}
 
 // ---------------------------------------------------------------------------
 
