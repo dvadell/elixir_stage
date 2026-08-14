@@ -18,6 +18,7 @@
 // (`tts_engine.js`), which currently routes to the native Web Speech API.
 
 import { WHISPER_CONFIG } from "./whisper_config.js";
+import { TTS_CONFIG } from "./tts_config.js";
 import { createTTSEngine } from "./tts_engine.js";
 
 const RECORD_BUTTON_BASE =
@@ -99,6 +100,7 @@ class VoiceAssistantController {
     this.el.removeEventListener("pointerup", this.onPointerUp);
     this.el.removeEventListener("pointercancel", this.onPointerUp);
     this.teardownAudio();
+    this.ttsEngine?.cancel();
     if (this.worker) {
       this.worker.terminate();
       this.worker = null;
@@ -121,7 +123,7 @@ class VoiceAssistantController {
       model: params.get("model") || this.readCookie("soundai_model") || WHISPER_CONFIG.model,
       language:
         params.get("language") || this.readCookie("soundai_language") || WHISPER_CONFIG.language,
-      tts: params.get("tts") || this.readCookie("soundai_tts") || "native",
+      tts: params.get("tts") || this.readCookie("soundai_tts") || TTS_CONFIG.engine,
     };
   }
 
@@ -302,17 +304,22 @@ class VoiceAssistantController {
     return "wasm";
   }
 
-  // Preloads the Whisper model (the one selected in /settings, or the config
-  // default) before the record button becomes interactive. Model loading is
-  // kept separate from usage so the user never waits on it while talking.
+  // Preloads the Whisper model and TTS engine in parallel so the user never
+  // waits on either while talking. Whisper readiness is the gate for the
+  // record button; the TTS engine is best-effort and falls back to native.
   async preload() {
     if (this.ready || this.preloading) return;
     this.preloading = true;
     this.lastForwardedProgress = 0;
     this.progress = 0;
     this.setState("loading");
+
     try {
-      await this.ensureInit();
+      // Preload Whisper (the gate) and TTS engine in parallel
+      await Promise.allSettled([
+        this.ensureInit(),
+        this.ensureTTSPreload()
+      ]);
     } catch (_err) {
       // fail() has already surfaced the error; a retry is handled on
       // pointerdown since the microphone button is only shown once ready.
@@ -344,6 +351,27 @@ class VoiceAssistantController {
       });
 
     return this.workerInit;
+  }
+
+  // Preloads the TTS engine model in parallel with Whisper. Native engine
+  // needs no model preload. On failure, replaces the engine with native.
+  ensureTTSPreload() {
+    if (this._ttsPreloadPromise) return this._ttsPreloadPromise;
+
+    this._ttsPreloadPromise = this.detectDevice()
+      .then((device) => {
+        if (this.config.tts === "native") return;
+
+        this.log(`preloading TTS engine: ${this.config.tts} on ${device}`);
+        return this.ttsEngine.init(device);
+      })
+      .catch((err) => {
+        console.warn("[soundai] TTS preload failed, falling back to native:", err?.message || err);
+        this.ttsEngine = createTTSEngine("native");
+        this.ttsEngine.init();
+      });
+
+    return this._ttsPreloadPromise;
   }
 
   onWorkerMessage(message) {
@@ -466,17 +494,26 @@ class VoiceAssistantController {
   }
 
   // Speak the server-returned text through the pluggable TTS engine.
-  // Falls back to showing the transcript with a quiet note if the engine
-  // is unavailable or the response is empty.
+  // Falls back to native engine on local engine failure, then to a quiet
+  // note if both fail. Never enters the error state (PRD §13).
   speakResponse(responseText) {
     // A new recording may have started while the fetch was in flight; never
     // speak a stale response over it or clobber the "listening" state.
     if (this.state !== "sending") return;
 
     if (!this.ttsEngine || !this.ttsEngine.isReady()) {
-      this.sendNote = "Speech synthesis is not available.";
-      this.setState("result");
-      return;
+      // Try native fallback immediately if the configured engine is not ready.
+      if (this.config.tts !== "native") {
+        this.log("TTS engine not ready, falling back to native");
+        this.ttsEngine = createTTSEngine("native");
+        this.ttsEngine.init();
+      }
+
+      if (!this.ttsEngine.isReady()) {
+        this.sendNote = "Speech synthesis is not available.";
+        this.setState("result");
+        return;
+      }
     }
 
     this.setState("speaking");
@@ -490,8 +527,36 @@ class VoiceAssistantController {
             this.setState("result");
           }
         },
-        onerror: () => {
+        onerror: (err) => {
           if (this.state === "speaking") {
+            // Try native fallback on synthesis failure.
+            if (this.config.tts !== "native") {
+              console.warn("[soundai] TTS synthesis failed, falling back to native:", err);
+              this.ttsEngine = createTTSEngine("native");
+              this.ttsEngine.init();
+
+              if (this.ttsEngine.isReady()) {
+                this.ttsEngine.speak(
+                  responseText,
+                  this.config.language,
+                  {
+                    onend: () => {
+                      if (this.state === "speaking") {
+                        this.setState("result");
+                      }
+                    },
+                    onerror: () => {
+                      if (this.state === "speaking") {
+                        this.sendNote = "Speech playback failed.";
+                        this.setState("result");
+                      }
+                    },
+                  }
+                );
+                return;
+              }
+            }
+
             this.sendNote = "Speech playback failed.";
             this.setState("result");
           }

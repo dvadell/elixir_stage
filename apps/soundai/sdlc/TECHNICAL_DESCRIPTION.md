@@ -42,6 +42,15 @@ transcribed text -> rendered into the DOM by voice_assistant.js
 
 voice_assistant.js -> tts_engine.js (pluggable TTS engine registry)
   |--> native engine (speechSynthesis) -> speaker
+  |--> transformers engine (local VITS model)
+  |     |
+  |     v
+  |  tts_worker.js (Web Worker, Transformers.js + VITS)
+  |     |--> WebGPU (preferred) --> WASM/CPU (fallback)
+  |     v
+  |  Float32Array audio @16 kHz
+  |     v
+  |  Web Audio API (AudioContext) -> speaker
 ```
 
 Audio never leaves the browser. The Phoenix backend only serves:
