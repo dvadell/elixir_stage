@@ -21,8 +21,12 @@ defmodule SoundaiWeb.Router do
     get "/settings", SettingsController, :index
   end
 
-  # Other scopes may use custom stacks.
-  # scope "/api", SoundaiWeb do
-  #   pipe_through :api
-  # end
+  # JSON API. Only a single endpoint for now: the voice assistant POSTs the
+  # local Whisper transcript here so the backend can process/relay it. Raw
+  # microphone audio never reaches the server.
+  scope "/api", SoundaiWeb do
+    pipe_through :api
+
+    post "/transcriptions", TranscriptionController, :create
+  end
 end

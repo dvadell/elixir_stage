@@ -5,10 +5,11 @@ Spanish speech locally in the browser using **Whisper** via **Transformers.js**
 (on WebGPU or WASM/CPU), and shows the transcript on screen.
 
 It is deliberately **offline-first and client-side**: there is **no Phoenix
-LiveView / websocket** at runtime. The server only renders static HTML shells;
-every interaction (mic capture, model load, inference, UI state) happens in the
-browser. Once the page and the speech model are cached, the app works with no
-network at all.
+LiveView / websocket** at runtime. The server only renders static HTML shells
+and accepts a single JSON endpoint; every interaction (mic capture, model load,
+inference, UI state) happens in the browser. Once the page and the speech model
+are cached, STT keeps working with no network at all. The transcribed **text**
+is POSTed to the server as a best-effort call — STT never depends on it.
 
 `soundai` lives in a Phoenix umbrella alongside a sibling app (`soundpanel`).
 
@@ -44,6 +45,20 @@ Audio never leaves the browser. The Phoenix backend only serves:
 - the built JS/CSS bundles
 - `service_worker.js` (offline caching)
 
+The backend also accepts one JSON call:
+
+```text
+transcribed text
+  |
+  | POST /api/transcriptions  (fetch, JSON, same origin)
+  v
+SoundaiWeb.TranscriptionController -> Soundai.Conversation.submit_transcript/1
+```
+
+`submit_transcript/1` validates and logs the transcript today; it is the seam
+where the future LLM relay (through Needle) will be added, so the web layer
+never changes when the AI orchestration is wired in.
+
 ## 2. Repository layout
 
 ```text
@@ -58,14 +73,19 @@ apps/soundai/
 │   │   └── whisper_worker.js       Web Worker: Transformers.js Whisper pipeline
 │   ├── package.json                only @huggingface/transformers
 │   └── vendor/                     heroicons plugin, topbar (unused)
+├── lib/soundai/
+│   ├── application.ex             OTP application / supervisor tree
+│   ├── conversation.ex            receives transcripts; seam for the future LLM relay
+│   └── mailer.ex
 ├── lib/soundai_web/
-│   ├── router.ex                   get "/" and get "/settings" (plain controllers)
+│   ├── router.ex                   get "/", get "/settings", post "/api/transcriptions"
 │   ├── endpoint.ex                 COOP/COEP headers, static serving, no /live socket
 │   ├── controllers/
 │   │   ├── home_controller.ex      renders the voice assistant shell
 │   │   ├── home_html/              home page templates (HTML module)
 │   │   ├── settings_controller.ex  renders the STT settings shell
-│   │   └── settings_html/          settings templates
+│   │   ├── settings_html/          settings templates
+│   │   └── transcription_controller.ex  POST /api/transcriptions JSON endpoint
 │   └── components/
 │       ├── layouts.ex              app layout, flash_group, theme_toggle
 │       └── layouts/root.html.heex  <head>, offline banner, theme script
@@ -87,10 +107,11 @@ apps/soundai/
 
 `lib/soundai_web/router.ex` — plain controller actions, no `live` routes:
 
-| Route      | Controller      | Renders                                    |
+| Route | Controller | Renders |
 |------------|-----------------|--------------------------------------------|
 | `GET /`          | `HomeController.index`    | `home_html/index.html.heex` (full-screen voice assistant) |
 | `GET /settings`  | `SettingsController.index`| `settings_html/index.html.heex`            |
+| `POST /api/transcriptions` | `TranscriptionController.create` | JSON envelope `{"ok": true}` (no template) |
 
 `service_worker.js` is a static file served from `priv/static/` (added to
 `SoundaiWeb.static_paths/0`). `Plug.Static` `only:` includes it.
@@ -120,6 +141,7 @@ display classes (a Tailwind `hidden` class silently beats the attribute).
 | `#preparing-hint` / `#preparing-progress` | "Preparing Whisper… N%" hint    |
 | `#voice-result`       | bottom transcript/error panel                    |
 | `#voice-error`, `#voice-transcript` | error vs transcript text           |
+| `#voice-send-status`  | non-blocking "Sending…"/offline note under the transcript |
 
 Server default state: loading screen visible, record button hidden. JS takes
 over on boot (`start()` → `setState("loading")` → `preload()`).
@@ -127,13 +149,20 @@ over on boot (`start()` → `setState("loading")` → `preload()`).
 ### 4.2 Client-side state machine
 
 `VoiceAssistantController` in `voice_assistant.js` drives the DOM directly.
-States: `loading → idle → listening → transcribing → result | error → idle`.
+States: `loading → idle → listening → transcribing → sending → result | error →
+idle`.
 
 - `render()` recomputes every element from `{state, progress, transcript, error}`.
 - Pointer handlers live on the root container; presses that start on an `<a>`
   (the settings link) are ignored so navigation still works.
 - `preload()` loads the model before the button is interactive; tapping while
   loading/errored re-triggers the preload.
+- On a transcription result, `sendTranscript/1` POSTs `{text, language}` to
+  `/api/transcriptions` with `fetch` while the UI shows the "Sending…" state.
+  The send is best-effort: on success the note disappears; on failure the
+  transcript stays visible under a quiet "offline / couldn't reach the server"
+  note and the UI never enters the error state. When `navigator.onLine` is
+  false the POST is skipped entirely.
 
 ### 4.3 Audio capture
 
@@ -210,6 +239,8 @@ Settings page (`/settings`) writes a `soundai_model` cookie. Precedence at load:
 3. **No server dependency** — the UI state machine is client-side, so dropping
    the network never freezes the page. An `#offline-banner` ("Offline — speech
    recognition still works locally") is shown when `navigator.onLine` flips.
+   Transcription keeps working fully offline; only the transcript send to
+   `/api/transcriptions` is best-effort and fails quietly (see §4.2).
 
 For full offline: visit the page once online (populates model + shell cache),
 then reload offline.
@@ -249,8 +280,10 @@ mix precommit      # compile --warnings-as-errors, format, credo --strict, dialy
 ## 10. Testing
 
 - Controller tests in `apps/soundai/test/soundai_web/controllers/`
-  (`HomeControllerTest`, `SettingsControllerTest`): assert the server-rendered
-  shell (element ids, links, option values, no header on settings).
+  (`HomeControllerTest`, `SettingsControllerTest`, `TranscriptionControllerTest`):
+  assert the server-rendered shell (element ids, links, option values, no header
+  on settings) and the JSON envelope/validation of `POST /api/transcriptions`
+  (valid → 201 `{"ok": true}`, missing/blank/oversized text → 422).
 - `layouts_test.exs` / `core_components_test.exs` still use
   `Phoenix.LiveViewTest.render_component` (the dep remains for compile-time
   components).

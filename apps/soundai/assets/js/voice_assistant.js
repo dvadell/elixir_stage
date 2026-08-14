@@ -52,6 +52,7 @@ class VoiceAssistantController {
     this.transcript = null;
     this.error = null;
     this.progress = null;
+    this.sendNote = null;
     this.config = this.resolveConfig();
 
     this.onPointerDown = this.onPointerDown.bind(this);
@@ -73,6 +74,7 @@ class VoiceAssistantController {
       resultBoxInner: document.getElementById("voice-result-box"),
       errorText: document.getElementById("voice-error"),
       transcriptText: document.getElementById("voice-transcript"),
+      sendStatus: document.getElementById("voice-send-status"),
     };
   }
 
@@ -136,6 +138,7 @@ class VoiceAssistantController {
     console.error("[soundai] error:", message, details ?? "");
     this.error = message;
     this.transcript = null;
+    this.sendNote = null;
     this.setState("error");
     this.teardownAudio();
   }
@@ -233,6 +236,14 @@ class VoiceAssistantController {
       this.ui.resultBoxInner.className =
         "w-full max-w-2xl rounded-box border border-base-300 bg-base-100/90 px-6 py-5 text-center shadow-lg backdrop-blur";
     }
+
+    // Non-blocking send status: "Sending…" while the transcript is in flight,
+    // a quiet offline notice after a failed send, nothing on success.
+    const note = errorMode ? null : this.sendNote;
+    this.setHidden(this.ui.sendStatus, !note);
+    if (note) {
+      this.ui.sendStatus.textContent = note;
+    }
   }
 
   voiceLabel() {
@@ -241,6 +252,8 @@ class VoiceAssistantController {
         return "Listening…";
       case "transcribing":
         return "Transcribing…";
+      case "sending":
+        return "Sending…";
       case "result":
         return "Tap to talk again";
       case "error":
@@ -394,7 +407,43 @@ class VoiceAssistantController {
     });
     this.transcript = text;
     this.error = null;
-    this.setState("result");
+    this.sendNote = "Sending…";
+    this.setState("sending");
+    this.sendTranscript(text);
+  }
+
+  // Best-effort send of the transcript to the backend. Only the text travels
+  // over the network; raw microphone audio never leaves the browser. The UI
+  // must never depend on this: the transcript stays visible and the send fails
+  // quietly (or is skipped entirely) when offline.
+  async sendTranscript(text) {
+    const payload = { text, language: this.config.language };
+    let ok = false;
+
+    if (navigator.onLine) {
+      try {
+        const response = await fetch("/api/transcriptions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        ok = response.ok;
+      } catch (_err) {
+        ok = false;
+      }
+    }
+
+    this.sendNote = ok
+      ? null
+      : navigator.onLine
+        ? "Couldn't reach the server — transcript kept locally."
+        : "Offline — transcript kept locally.";
+
+    if (this.state === "sending") {
+      this.setState("result");
+    } else {
+      this.render();
+    }
   }
 
   // ----------------------------------------------------------- microphone
@@ -497,6 +546,7 @@ class VoiceAssistantController {
 
     this.recording = true;
     this.progress = 0;
+    this.sendNote = null;
     this.setState("listening");
 
     // Model initialization is already preloaded; this call is a no-op safety
