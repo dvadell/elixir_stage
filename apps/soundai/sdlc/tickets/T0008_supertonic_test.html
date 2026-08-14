@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Supertonic TTS Test</title>
+  <style>
+    body { font-family: sans-serif; padding: 2rem; max-width: 800px; margin: 0 auto; }
+    .log { background: #f4f4f4; padding: 1rem; border-radius: 0.5rem; font-family: monospace; white-space: pre-wrap; max-height: 400px; overflow-y: auto; margin: 1rem 0; }
+    button { padding: 0.5rem 1rem; margin: 0.5rem; cursor: pointer; }
+    .status { padding: 0.5rem; border-radius: 0.25rem; margin: 0.5rem 0; }
+    .ok { background: #d4edda; }
+    .fail { background: #f8d7da; }
+    .info { background: #d1ecf1; }
+  </style>
+</head>
+<body>
+  <h1>Supertonic-TTS-2-ONNX Evaluation</h1>
+  <p>Testing <code>onnx-community/Supertonic-TTS-2-ONNX</code> with transformers.js</p>
+  
+  <div>
+    <button id="btn-test">Test Supertonic Load + Synthesis</button>
+    <button id="btn-mms">Test MMS (baseline)</button>
+  </div>
+  
+  <div id="status"></div>
+  <div class="log" id="log"></div>
+  
+  <script type="module">
+    import { pipeline, env } from "https://esm.sh/@huggingface/transformers@4.2.0";
+    
+    env.allowLocalModels = false;
+    env.useBrowserCache = true;
+    env.useWasmCache = true;
+    
+    const logEl = document.getElementById("log");
+    const statusEl = document.getElementById("status");
+    
+    function log(msg) {
+      logEl.textContent += msg + "\n";
+      logEl.scrollTop = logEl.scrollHeight;
+      console.log(msg);
+    }
+    
+    function status(text, type) {
+      statusEl.className = "status " + type;
+      statusEl.textContent = text;
+    }
+    
+    const spanishText = "Buenos días. Hoy hace un día hermoso y soleado. ¿Qué planes tienes para el fin de semana?";
+    
+    async function testSupertonic() {
+      log("\n=== Supertonic-TTS-2-ONNX Test ===\n");
+      status("Loading Supertonic model...", "info");
+      
+      const t0 = performance.now();
+      
+      try {
+        const synthesizer = await pipeline(
+          "text-to-speech",
+          "onnx-community/Supertonic-TTS-2-ONNX",
+          { dtype: "fp32", device: "webgpu" }
+        );
+        
+        const loadTime = performance.now() - t0;
+        log(`Model loaded in ${loadTime.toFixed(0)}ms`);
+        status(`Loaded in ${loadTime.toFixed(0)}ms`, "ok");
+        
+        // Synthesis
+        const s0 = performance.now();
+        const output = await synthesizer(spanishText);
+        const synthTime = performance.now() - s0;
+        
+        log(`Synthesis time: ${synthTime.toFixed(0)}ms`);
+        log(`Output type: ${typeof output}`);
+        log(`Output keys: ${JSON.stringify(Object.keys(output))}`);
+        
+        if (output.audio) {
+          const audioDuration = (output.audio.length / output.sampling_rate) * 1000;
+          const ratio = audioDuration / synthTime;
+          log(`Audio length: ${output.audio.length} samples`);
+          log(`Sampling rate: ${output.sampling_rate}`);
+          log(`Audio duration: ${audioDuration.toFixed(0)}ms`);
+          log(`Synthesis ratio: ${ratio.toFixed(2)}x`);
+          
+          // Play audio
+          const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+          const buffer = audioContext.createBuffer(1, output.audio.length, output.sampling_rate);
+          buffer.getChannelData(0).set(output.audio);
+          const source = audioContext.createBufferSource();
+          source.buffer = buffer;
+          source.connect(audioContext.destination);
+          source.start();
+          log("Audio playback started");
+        } else {
+          log("No audio in output!");
+          status("Synthesis failed - no audio output", "fail");
+        }
+        
+        status(`SUCCESS: Load ${loadTime.toFixed(0)}ms, Synth ${synthTime.toFixed(0)}ms`, "ok");
+        
+      } catch (err) {
+        const loadTime = performance.now() - t0;
+        log(`ERROR after ${loadTime.toFixed(0)}ms: ${err.message}`);
+        log(err.stack);
+        status(`FAILED: ${err.message}`, "fail");
+      }
+    }
+    
+    async function testMMS() {
+      log("\n=== MMS TTS (baseline) Test ===\n");
+      status("Loading MMS model...", "info");
+      
+      const t0 = performance.now();
+      
+      try {
+        const synthesizer = await pipeline(
+          "text-to-speech",
+          "Xenova/mms-tts-spa",
+          { dtype: "fp32", device: "webgpu" }
+        );
+        
+        const loadTime = performance.now() - t0;
+        log(`Model loaded in ${loadTime.toFixed(0)}ms`);
+        status(`Loaded in ${loadTime.toFixed(0)}ms`, "ok");
+        
+        const s0 = performance.now();
+        const output = await synthesizer(spanishText);
+        const synthTime = performance.now() - s0;
+        
+        log(`Synthesis time: ${synthTime.toFixed(0)}ms`);
+        log(`Output type: ${typeof output}`);
+        log(`Output keys: ${JSON.stringify(Object.keys(output))}`);
+        
+        if (output.audio) {
+          const audioDuration = (output.audio.length / output.sampling_rate) * 1000;
+          const ratio = audioDuration / synthTime;
+          log(`Audio length: ${output.audio.length} samples`);
+          log(`Sampling rate: ${output.sampling_rate}`);
+          log(`Audio duration: ${audioDuration.toFixed(0)}ms`);
+          log(`Synthesis ratio: ${ratio.toFixed(2)}x`);
+          
+          const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+          const buffer = audioContext.createBuffer(1, output.audio.length, output.sampling_rate);
+          buffer.getChannelData(0).set(output.audio);
+          const source = audioContext.createBufferSource();
+          source.buffer = buffer;
+          source.connect(audioContext.destination);
+          source.start();
+          log("Audio playback started");
+        }
+        
+        status(`SUCCESS: Load ${loadTime.toFixed(0)}ms, Synth ${synthTime.toFixed(0)}ms`, "ok");
+        
+      } catch (err) {
+        const loadTime = performance.now() - t0;
+        log(`ERROR after ${loadTime.toFixed(0)}ms: ${err.message}`);
+        log(err.stack);
+        status(`FAILED: ${err.message}`, "fail");
+      }
+    }
+    
+    document.getElementById("btn-test").addEventListener("click", testSupertonic);
+    document.getElementById("btn-mms").addEventListener("click", testMMS);
+  </script>
+</body>
+</html>

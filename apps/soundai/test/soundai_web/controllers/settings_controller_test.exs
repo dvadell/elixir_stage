@@ -40,9 +40,11 @@ defmodule SoundaiWeb.SettingsControllerTest do
     html = html_response(conn, 200)
 
     assert html =~ ~S|value="Xenova/mms-tts-spa"|
-    assert html =~ ~S|value="onnx-community/Supertonic-TTS-2-ONNX"|
     assert html =~ ~S|value="native"|
     assert html =~ "data-desc"
+    # Supertonic-TTS-2-ONNX was removed (T0008): requires engine-specific
+    # speaker_embeddings, 3.1x slower cold load, 7x larger download
+    refute html =~ ~S|value="onnx-community/Supertonic-TTS-2-ONNX"|
   end
 
   test "links back to the voice assistant", %{conn: conn} do

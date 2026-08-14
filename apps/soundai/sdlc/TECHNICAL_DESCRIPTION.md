@@ -365,3 +365,35 @@ mix precommit
 - TTS engine options live in `SettingsHTML` (`@tts_models`); the `tts_engine.js`
   registry is the JS counterpart. When a new engine class is added, register it
   in `tts_engine.js` and add the corresponding option to `@tts_models`.
+
+## 13. TTS benchmarks (T0008)
+
+Benchmark environment: Linux aarch64, Node.js v22.20.0, transformers.js ^4.2.0,
+WASM only (WebGPU is unavailable in Node.js). Numbers are single cold-load runs
+(not the 3-run median the ticket asks for). Fixed Spanish test text:
+`"Buenos días. Hoy hace un día hermoso y soleado. ¿Qué planes tienes para el fin de semana?"`.
+
+Scope note: WebGPU, cached loads, and memory footprint were **not** measured.
+The removal decision does not hinge on them — the `speaker_embeddings`
+interface break is environment-independent. Benchmark scripts are preserved in
+`sdlc/tickets/` (`T0008_test_tts.mjs`, `T0008_supertonic_test.html`) so the
+numbers can be reproduced or extended later.
+
+| Metric | Xenova/mms-tts-spa | Supertonic-TTS-2-ONNX |
+|---|---|---|
+| Model download size | ~38 MB (fp32) | ~260 MB (fp32) |
+| Cold load time | 8 251 ms | 25 943 ms |
+| Primed synthesis latency | 1 725 ms | 1 677 ms |
+| Synthesis ratio (audio duration / wall-clock) | 4.02x | 5.95x |
+| Sampling rate | 16 000 Hz | 44 100 Hz |
+| Engine-specific parameters | None | `speaker_embeddings` required |
+
+**Decision: Supertonic-TTS-2-ONNX removed from available options.**
+
+Reasons:
+1. **Requires engine-specific `speaker_embeddings` parameter** — breaks the generic `synthesize(text)` interface in `tts_worker.js`. The current architecture calls `pipeline("text-to-speech", modelId)(text)` with no model-specific options; Supertonic throws without speaker embeddings.
+2. **3.1x slower cold load** (26s vs 8s) — unacceptable for target users (older adults, possibly low-end hardware).
+3. **7x larger download** (260 MB vs 38 MB) — significant barrier on mobile/limited connections.
+4. **Voice files are Git LFS binaries** — additional complexity to load speaker embeddings in browser context.
+
+Default engine remains `Xenova/mms-tts-spa`.
