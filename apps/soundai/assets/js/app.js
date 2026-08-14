@@ -9,11 +9,12 @@
 import "phoenix_html"
 
 import {mountVoiceAssistant} from "./voice_assistant"
-import {mountSTTSettings} from "./settings"
+import {mountSTTSettings, mountTTSSettings} from "./settings"
 
 function boot() {
   mountVoiceAssistant()
   mountSTTSettings()
+  mountTTSSettings()
 }
 
 // The theme toggle and offline banner are plain client-side behaviors.

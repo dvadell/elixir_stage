@@ -14,9 +14,11 @@
 // model are already cached, STT keeps working with no network at all. The only
 // server communication is the best-effort POST of the transcript text to
 // `/api/transcriptions`; the server's `response` (the same text today, the LLM
-// reply later) is spoken aloud via the native `speechSynthesis` API.
+// reply later) is spoken aloud through the pluggable TTS engine
+// (`tts_engine.js`), which currently routes to the native Web Speech API.
 
 import { WHISPER_CONFIG } from "./whisper_config.js";
+import { createTTSEngine } from "./tts_engine.js";
 
 const RECORD_BUTTON_BASE =
   "flex h-full w-full cursor-pointer items-center justify-center transition-colors duration-200 focus:outline-none";
@@ -56,6 +58,7 @@ class VoiceAssistantController {
     this.progress = null;
     this.sendNote = null;
     this.config = this.resolveConfig();
+    this.ttsEngine = createTTSEngine(this.config.tts);
 
     this.onPointerDown = this.onPointerDown.bind(this);
     this.onPointerUp = this.onPointerUp.bind(this);
@@ -118,6 +121,7 @@ class VoiceAssistantController {
       model: params.get("model") || this.readCookie("soundai_model") || WHISPER_CONFIG.model,
       language:
         params.get("language") || this.readCookie("soundai_language") || WHISPER_CONFIG.language,
+      tts: params.get("tts") || this.readCookie("soundai_tts") || "native",
     };
   }
 
@@ -461,62 +465,39 @@ class VoiceAssistantController {
     }
   }
 
-  // Speak the server-returned text using the native Web Speech API.
-  // Falls back to showing the transcript with a quiet note if speechSynthesis
+  // Speak the server-returned text through the pluggable TTS engine.
+  // Falls back to showing the transcript with a quiet note if the engine
   // is unavailable or the response is empty.
   speakResponse(responseText) {
     // A new recording may have started while the fetch was in flight; never
     // speak a stale response over it or clobber the "listening" state.
     if (this.state !== "sending") return;
 
-    if (typeof window.speechSynthesis === "undefined") {
-      this.sendNote = "Speech synthesis not supported in this browser.";
+    if (!this.ttsEngine || !this.ttsEngine.isReady()) {
+      this.sendNote = "Speech synthesis is not available.";
       this.setState("result");
       return;
     }
 
-    window.speechSynthesis.cancel();
-
-    const utterance = new SpeechSynthesisUtterance(responseText);
-    const langTag = this.languageToBCP47(this.config.language);
-    utterance.lang = langTag;
-
-    // Prefer a voice matching the target language
-    const voices = window.speechSynthesis.getVoices();
-    const matchingVoice = voices.find((v) => v.lang.toLowerCase().startsWith(langTag.toLowerCase()));
-    if (matchingVoice) utterance.voice = matchingVoice;
-
-    utterance.onend = () => {
-      if (this.state === "speaking") {
-        this.setState("result");
-      }
-    };
-
-    utterance.onerror = () => {
-      if (this.state === "speaking") {
-        this.sendNote = "Speech playback failed.";
-        this.setState("result");
-      }
-    };
-
     this.setState("speaking");
-    window.speechSynthesis.speak(utterance);
-  }
 
-  // Map STT language names to BCP-47 tags for speechSynthesis.
-  languageToBCP47(lang) {
-    const map = {
-      spanish: "es-ES",
-      english: "en-US",
-      french: "fr-FR",
-      german: "de-DE",
-      italian: "it-IT",
-      portuguese: "pt-BR",
-      japanese: "ja-JP",
-      chinese: "zh-CN",
-      korean: "ko-KR",
-    };
-    return map[lang] || lang;
+    this.ttsEngine.speak(
+      responseText,
+      this.config.language,
+      {
+        onend: () => {
+          if (this.state === "speaking") {
+            this.setState("result");
+          }
+        },
+        onerror: () => {
+          if (this.state === "speaking") {
+            this.sendNote = "Speech playback failed.";
+            this.setState("result");
+          }
+        },
+      }
+    );
   }
 
   // ----------------------------------------------------------- microphone
@@ -610,9 +591,7 @@ class VoiceAssistantController {
     if (this.recording || this.state === "transcribing") return;
 
     // Stop any ongoing speech synthesis so the user can interrupt mid-speech
-    if (typeof window.speechSynthesis !== "undefined") {
-      window.speechSynthesis.cancel();
-    }
+    this.ttsEngine?.cancel();
 
     if (this.state === "loading" || (this.state === "error" && !this.ready)) {
       // The model is still loading (or failed to load): (re)start the preload

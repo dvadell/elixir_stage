@@ -25,7 +25,34 @@ defmodule SoundaiWeb.SettingsHTML do
     }
   ]
 
+  # TTS engine options. Local model options are listed first; the native
+  # browser engine is the last option. Until local engines are implemented
+  # (T0007), unimplemented ids fall back to the native engine via the
+  # registry in tts_engine.js.
+  @tts_models [
+    {
+      "Xenova/mms-tts-spa",
+      gettext("MMS Español — balanced"),
+      gettext(
+        "Local Spanish TTS model (VITS). Runs in the browser after first download. No audio leaves your device."
+      )
+    },
+    {
+      "onnx-community/Supertonic-TTS-2-ONNX",
+      gettext("Supertonic 2 — best quality"),
+      gettext("Higher quality local TTS model. Larger download, slower inference. Experimental.")
+    },
+    {
+      "native",
+      gettext("Voz nativa del sistema"),
+      gettext(
+        "Your browser's built-in voices. No download required. Quality varies by operating system."
+      )
+    }
+  ]
+
   embed_templates "settings_html/*"
 
   defp models, do: @models
+  defp tts_models, do: @tts_models
 end

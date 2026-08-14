@@ -1,34 +1,44 @@
 // Client-side controller for the /settings page.
 //
-// The STT model preference is read from and written to a browser cookie
-// entirely here, with no server round-trip. This mirrors the voice assistant's
-// offline-first design: the settings page works even when the network is
-// unavailable (as long as the app shell is cached).
+// The STT model and TTS engine preferences are read from and written to
+// browser cookies entirely here, with no server round-trip. This mirrors
+// the voice assistant's offline-first design: the settings page works even
+// when the network is unavailable (as long as the app shell is cached).
 
-const STORAGE_KEY = "soundai_model";
+const STORAGE_KEY_STT = "soundai_model";
+const STORAGE_KEY_TTS = "soundai_tts";
 
-export function mountSTTSettings() {
-  const select = document.getElementById("stt-model");
-  if (!select || select.dataset.sttMounted) return;
-  select.dataset.sttMounted = "true";
+// ---------------------------------------------------------------------------
+// Shared cookie helpers
+// ---------------------------------------------------------------------------
 
-  const desc = document.getElementById("stt-model-desc");
-  const saved = document.getElementById("stt-saved");
-  const savedText = document.getElementById("stt-saved-text");
-
-  function readCookie(name) {
-    const prefix = `${name}=`;
-    for (const cookie of document.cookie.split("; ")) {
-      if (cookie.startsWith(prefix)) {
-        return decodeURIComponent(cookie.slice(prefix.length));
-      }
+function readCookie(name) {
+  const prefix = `${name}=`;
+  for (const cookie of document.cookie.split("; ")) {
+    if (cookie.startsWith(prefix)) {
+      return decodeURIComponent(cookie.slice(prefix.length));
     }
-    return null;
   }
+  return null;
+}
 
-  function writeCookie(name, value) {
-    document.cookie = `${name}=${encodeURIComponent(value)}; path=/; max-age=31536000; SameSite=Lax`;
-  }
+function writeCookie(name, value) {
+  document.cookie = `${name}=${encodeURIComponent(value)}; path=/; max-age=31536000; SameSite=Lax`;
+}
+
+// ---------------------------------------------------------------------------
+// Generic select mounter — handles one <select> + description + saved banner
+// ---------------------------------------------------------------------------
+
+function mountSelect(settings) {
+  const { selectId, descId, savedId, savedTextId, cookieKey, mountedKey } = settings;
+  const select = document.getElementById(selectId);
+  if (!select || select.dataset[mountedKey]) return;
+  select.dataset[mountedKey] = "true";
+
+  const desc = document.getElementById(descId);
+  const saved = document.getElementById(savedId);
+  const savedText = document.getElementById(savedTextId);
 
   function selectedOption() {
     return select.options[select.selectedIndex];
@@ -48,7 +58,7 @@ export function mountSTTSettings() {
     saved.hidden = false;
   }
 
-  const stored = readCookie(STORAGE_KEY);
+  const stored = readCookie(cookieKey);
   if (stored && [...select.options].some((opt) => opt.value === stored)) {
     select.value = stored;
   }
@@ -56,8 +66,34 @@ export function mountSTTSettings() {
   showDescription();
 
   select.addEventListener("change", (event) => {
-    writeCookie(STORAGE_KEY, event.target.value);
+    writeCookie(cookieKey, event.target.value);
     showDescription();
     showSaved();
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Public entry points
+// ---------------------------------------------------------------------------
+
+export function mountSTTSettings() {
+  mountSelect({
+    selectId: "stt-model",
+    descId: "stt-model-desc",
+    savedId: "stt-saved",
+    savedTextId: "stt-saved-text",
+    cookieKey: STORAGE_KEY_STT,
+    mountedKey: "sttMounted",
+  });
+}
+
+export function mountTTSSettings() {
+  mountSelect({
+    selectId: "tts-model",
+    descId: "tts-model-desc",
+    savedId: "tts-saved",
+    savedTextId: "tts-saved-text",
+    cookieKey: STORAGE_KEY_TTS,
+    mountedKey: "ttsMounted",
   });
 }

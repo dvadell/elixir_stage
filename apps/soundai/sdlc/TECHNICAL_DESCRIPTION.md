@@ -25,7 +25,8 @@ Browser
   v
 app.js (entry point, esbuild bundle)
   |-- mountVoiceAssistant()  -> /          (voice assistant page)
-  |-- mountSTTSettings()     -> /settings  (model picker page)
+  |-- mountSTTSettings()     -> /settings  (STT + TTS picker page)
+  |-- mountTTSSettings()     -> /settings  (TTS engine picker page)
   |-- initOfflineBanner()                  (online/offline banner)
   |-- initThemeToggle()                    (light/dark/system toggle)
   |-- initServiceWorker()                  (production only)
@@ -38,6 +39,9 @@ whisper_worker.js (Web Worker, Transformers.js + Whisper)
   |--> WebGPU (preferred) --> WASM/CPU (fallback)
   v
 transcribed text -> rendered into the DOM by voice_assistant.js
+
+voice_assistant.js -> tts_engine.js (pluggable TTS engine registry)
+  |--> native engine (speechSynthesis) -> speaker
 ```
 
 Audio never leaves the browser. The Phoenix backend only serves:
@@ -59,14 +63,14 @@ SoundaiWeb.TranscriptionController -> Soundai.Conversation.submit_transcript/1
 {"ok": true, "response": "Buenos días", "language": "spanish"}
   |
   v
-Browser speechSynthesis -> speaker
+Browser tts_engine.js -> speechSynthesis -> speaker
 ```
 
 `submit_transcript/1` validates the transcript and returns the trimmed text as
 a `response` field in the JSON envelope. Today it echoes the transcript back;
 the follow-up LLM relay (through Needle) replaces the echo with the LLM's
 answer inside this same function. The client speaks the server's `response`
-text aloud using the native Web Speech API (`speechSynthesis`).
+text aloud through the pluggable TTS engine (`tts_engine.js`), which currently routes to the native Web Speech API (`speechSynthesis`).
 
 ## 2. Repository layout
 
@@ -77,7 +81,8 @@ apps/soundai/
 │   ├── js/
 │   │   ├── app.js                  entry point, boots the client modules
 │   │   ├── voice_assistant.js      main-thread voice UI controller + state machine
-│   │   ├── settings.js             /settings model-picker controller
+│   │   ├── settings.js             /settings STT + TTS picker controllers
+│   │   ├── tts_engine.js           pluggable TTS engine registry (native engine)
 │   │   ├── whisper_config.js       model/language/dtype defaults (single source)
 │   │   └── whisper_worker.js       Web Worker: Transformers.js Whisper pipeline
 │   ├── package.json                only @huggingface/transformers
@@ -92,7 +97,7 @@ apps/soundai/
 │   ├── controllers/
 │   │   ├── home_controller.ex      renders the voice assistant shell
 │   │   ├── home_html/              home page templates (HTML module)
-│   │   ├── settings_controller.ex  renders the STT settings shell
+│   │   ├── settings_controller.ex  renders the STT + TTS settings shell
 │   │   ├── settings_html/          settings templates
 │   │   └── transcription_controller.ex  POST /api/transcriptions JSON endpoint
 │   └── components/
@@ -231,12 +236,21 @@ Settings page (`/settings`) writes a `soundai_model` cookie. Precedence at load:
 
 ## 6. Settings page (`/settings`)
 
-- Template `settings_html/index.html.heex` renders a `<select id="stt-model">`;
-  each `<option>` carries `data-label` and `data-desc` so the client can render
+- Template `settings_html/index.html.heex` renders two selects:
+  1. `<select id="stt-model">` — STT model picker (Whisper models).
+  2. `<select id="tts-model">` — TTS engine picker (local models + native API).
+  Each `<option>` carries `data-label` and `data-desc` so the client can render
   descriptions/saved confirmation without the server.
-- `assets/js/settings.js` (`mountSTTSettings`) reads/writes the `soundai_model`
-  cookie, shows the description, and confirms the save — all client-side.
-- The list of models lives in `SettingsHTML` (`@models` → `models/0`).
+- `assets/js/settings.js` exports `mountSTTSettings` and `mountTTSSettings`,
+  both backed by a shared `mountSelect` helper. The STT mounter reads/writes
+  the `soundai_model` cookie; the TTS mounter reads/writes the `soundai_tts`
+  cookie. Both show descriptions and confirm the save — all client-side.
+- The list of STT models lives in `SettingsHTML` (`@models` → `models/0`).
+- The list of TTS engine options lives in `SettingsHTML` (`@tts_models` →
+  `tts_models/0`).
+- TTS engine selection precedence: **URL param (`?tts=...`) > `soundai_tts`
+  cookie > `"native"` default**. Unknown engine ids fall back to the native
+  engine with a console warning (see `tts_engine.js`).
 
 ## 7. Offline strategy (three independent layers)
 
@@ -339,3 +353,6 @@ mix precommit
   otherwise old assets may be served from the SW cache.
 - Model/model-config changes live in `whisper_config.js` (JS), while the
   settings-page options live in `SettingsHTML` (`@models`); keep them in sync.
+- TTS engine options live in `SettingsHTML` (`@tts_models`); the `tts_engine.js`
+  registry is the JS counterpart. When a new engine class is added, register it
+  in `tts_engine.js` and add the corresponding option to `@tts_models`.
