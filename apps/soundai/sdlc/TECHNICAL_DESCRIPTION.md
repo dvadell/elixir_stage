@@ -2,7 +2,8 @@
 
 Voice-first speech-to-text web app: a single microphone button that transcribes
 Spanish speech locally in the browser using **Whisper** via **Transformers.js**
-(on WebGPU or WASM/CPU), and shows the transcript on screen.
+(on WebGPU or WASM/CPU), shows the transcript on screen, and speaks the
+server's echo of it aloud via the native Web Speech API (`speechSynthesis`).
 
 It is deliberately **offline-first and client-side**: there is **no Phoenix
 LiveView / websocket** at runtime. The server only renders static HTML shells
@@ -53,11 +54,19 @@ transcribed text
   | POST /api/transcriptions  (fetch, JSON, same origin)
   v
 SoundaiWeb.TranscriptionController -> Soundai.Conversation.submit_transcript/1
+  |
+  v
+{"ok": true, "response": "Buenos días", "language": "spanish"}
+  |
+  v
+Browser speechSynthesis -> speaker
 ```
 
-`submit_transcript/1` validates and logs the transcript today; it is the seam
-where the future LLM relay (through Needle) will be added, so the web layer
-never changes when the AI orchestration is wired in.
+`submit_transcript/1` validates the transcript and returns the trimmed text as
+a `response` field in the JSON envelope. Today it echoes the transcript back;
+the follow-up LLM relay (through Needle) replaces the echo with the LLM's
+answer inside this same function. The client speaks the server's `response`
+text aloud using the native Web Speech API (`speechSynthesis`).
 
 ## 2. Repository layout
 
@@ -92,7 +101,7 @@ apps/soundai/
 ├── priv/static/
 │   ├── service_worker.js           offline app-shell service worker
 │   └── assets/                     built bundles (gitignored, generated)
-├── sdlc/tickets/                   T0002.md, T0003.md (feature tickets)
+├── sdlc/tickets/                   T0002.md–T0005.md (feature tickets)
 └── test/soundai_web/
     └── controllers/                controller tests (home + settings)
 ```
@@ -111,7 +120,7 @@ apps/soundai/
 |------------|-----------------|--------------------------------------------|
 | `GET /`          | `HomeController.index`    | `home_html/index.html.heex` (full-screen voice assistant) |
 | `GET /settings`  | `SettingsController.index`| `settings_html/index.html.heex`            |
-| `POST /api/transcriptions` | `TranscriptionController.create` | JSON envelope `{"ok": true}` (no template) |
+| `POST /api/transcriptions` | `TranscriptionController.create` | JSON envelope `{"ok": true, "response": <text>, "language": ...}` (no template) |
 
 `service_worker.js` is a static file served from `priv/static/` (added to
 `SoundaiWeb.static_paths/0`). `Plug.Static` `only:` includes it.
@@ -149,8 +158,7 @@ over on boot (`start()` → `setState("loading")` → `preload()`).
 ### 4.2 Client-side state machine
 
 `VoiceAssistantController` in `voice_assistant.js` drives the DOM directly.
-States: `loading → idle → listening → transcribing → sending → result | error →
-idle`.
+States: `loading → idle → listening → transcribing → sending → speaking → result | error → idle`.
 
 - `render()` recomputes every element from `{state, progress, transcript, error}`.
 - Pointer handlers live on the root container; presses that start on an `<a>`
@@ -163,6 +171,12 @@ idle`.
   transcript stays visible under a quiet "offline / couldn't reach the server"
   note and the UI never enters the error state. When `navigator.onLine` is
   false the POST is skipped entirely.
+- On a successful send, the server returns `{"ok": true, "response": "...", "language": "..."}`
+  echoing the transcript. The client speaks the `response` text aloud using the
+  native Web Speech API (`speechSynthesis`), entering the `speaking` state
+  ("Speaking…"). The `utterance.onend` event transitions back to `result`.
+- Starting a new recording (`pointerdown`) calls `speechSynthesis.cancel()` so
+  the user can interrupt the assistant mid-speech.
 
 ### 4.3 Audio capture
 
@@ -283,7 +297,8 @@ mix precommit      # compile --warnings-as-errors, format, credo --strict, dialy
   (`HomeControllerTest`, `SettingsControllerTest`, `TranscriptionControllerTest`):
   assert the server-rendered shell (element ids, links, option values, no header
   on settings) and the JSON envelope/validation of `POST /api/transcriptions`
-  (valid → 201 `{"ok": true}`, missing/blank/oversized text → 422).
+  (valid → 201 `{"ok": true, "response": <text>}`, missing/blank/oversized text
+  → 422).
 - `layouts_test.exs` / `core_components_test.exs` still use
   `Phoenix.LiveViewTest.render_component` (the dep remains for compile-time
   components).

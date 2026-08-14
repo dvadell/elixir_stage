@@ -8,7 +8,7 @@ defmodule SoundaiWeb.TranscriptionControllerTest do
   end
 
   describe "POST /api/transcriptions" do
-    test "accepts a valid transcript and returns the ok envelope", %{conn: conn} do
+    test "accepts a valid transcript and echoes it back", %{conn: conn} do
       conn =
         post_json(conn, %{
           "text" => "¿Qué tiempo hace mañana?",
@@ -16,14 +16,16 @@ defmodule SoundaiWeb.TranscriptionControllerTest do
         })
 
       assert conn.status == 201
-      assert %{"ok" => true, "language" => "spanish"} = json_response(conn, 201)
+
+      assert %{"ok" => true, "response" => "¿Qué tiempo hace mañana?", "language" => "spanish"} =
+               json_response(conn, 201)
     end
 
     test "language is optional", %{conn: conn} do
       conn = post_json(conn, %{"text" => "Hola"})
 
       assert conn.status == 201
-      assert %{"ok" => true} = json_response(conn, 201)
+      assert %{"ok" => true, "response" => "Hola"} = json_response(conn, 201)
     end
 
     test "rejects missing text", %{conn: conn} do
@@ -47,11 +49,11 @@ defmodule SoundaiWeb.TranscriptionControllerTest do
       assert %{"errors" => %{"text" => "is too long"}} = json_response(conn, 422)
     end
 
-    test "trims surrounding whitespace", %{conn: conn} do
+    test "trims surrounding whitespace and echoes trimmed text", %{conn: conn} do
       conn = post_json(conn, %{"text" => "  Hola  "})
 
       assert conn.status == 201
-      assert %{"ok" => true} = json_response(conn, 201)
+      assert %{"ok" => true, "response" => "Hola"} = json_response(conn, 201)
     end
   end
 end

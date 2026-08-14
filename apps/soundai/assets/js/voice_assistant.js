@@ -8,11 +8,13 @@
 //   * Render the whole assistant UI (loading / listening / transcribing /
 //     error / result) directly in the browser.
 //
-// This module is fully client-side and offline-first: it does not talk to the
-// Phoenix backend at all. Raw microphone audio never leaves the browser:
-// transcription runs locally through `whisper_worker.js` (Transformers.js +
-// Whisper) on WebGPU or WASM. As long as the page shell and the speech model
-// are already cached, the assistant keeps working with no network at all.
+// This module is offline-first: raw microphone audio never leaves the browser.
+// Transcription runs locally through `whisper_worker.js` (Transformers.js +
+// Whisper) on WebGPU or WASM, and as long as the page shell and the speech
+// model are already cached, STT keeps working with no network at all. The only
+// server communication is the best-effort POST of the transcript text to
+// `/api/transcriptions`; the server's `response` (the same text today, the LLM
+// reply later) is spoken aloud via the native `speechSynthesis` API.
 
 import { WHISPER_CONFIG } from "./whisper_config.js";
 
@@ -254,6 +256,8 @@ class VoiceAssistantController {
         return "Transcribing…";
       case "sending":
         return "Sending…";
+      case "speaking":
+        return "Speaking…";
       case "result":
         return "Tap to talk again";
       case "error":
@@ -419,6 +423,7 @@ class VoiceAssistantController {
   async sendTranscript(text) {
     const payload = { text, language: this.config.language };
     let ok = false;
+    let responseData = null;
 
     if (navigator.onLine) {
       try {
@@ -427,7 +432,10 @@ class VoiceAssistantController {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
-        ok = response.ok;
+        if (response.ok) {
+          responseData = await response.json();
+          ok = true;
+        }
       } catch (_err) {
         ok = false;
       }
@@ -439,11 +447,76 @@ class VoiceAssistantController {
         ? "Couldn't reach the server — transcript kept locally."
         : "Offline — transcript kept locally.";
 
-    if (this.state === "sending") {
+    if (ok && responseData && typeof responseData.response === "string" && responseData.response.trim() !== "") {
+      this.speakResponse(responseData.response);
+    } else if (this.state === "sending") {
+      if (ok) {
+        // A successful send with no speakable response (e.g. empty text): keep
+        // the transcript with a quiet note, never the error state.
+        this.sendNote = "No response from the server — transcript kept locally.";
+      }
       this.setState("result");
     } else {
       this.render();
     }
+  }
+
+  // Speak the server-returned text using the native Web Speech API.
+  // Falls back to showing the transcript with a quiet note if speechSynthesis
+  // is unavailable or the response is empty.
+  speakResponse(responseText) {
+    // A new recording may have started while the fetch was in flight; never
+    // speak a stale response over it or clobber the "listening" state.
+    if (this.state !== "sending") return;
+
+    if (typeof window.speechSynthesis === "undefined") {
+      this.sendNote = "Speech synthesis not supported in this browser.";
+      this.setState("result");
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(responseText);
+    const langTag = this.languageToBCP47(this.config.language);
+    utterance.lang = langTag;
+
+    // Prefer a voice matching the target language
+    const voices = window.speechSynthesis.getVoices();
+    const matchingVoice = voices.find((v) => v.lang.toLowerCase().startsWith(langTag.toLowerCase()));
+    if (matchingVoice) utterance.voice = matchingVoice;
+
+    utterance.onend = () => {
+      if (this.state === "speaking") {
+        this.setState("result");
+      }
+    };
+
+    utterance.onerror = () => {
+      if (this.state === "speaking") {
+        this.sendNote = "Speech playback failed.";
+        this.setState("result");
+      }
+    };
+
+    this.setState("speaking");
+    window.speechSynthesis.speak(utterance);
+  }
+
+  // Map STT language names to BCP-47 tags for speechSynthesis.
+  languageToBCP47(lang) {
+    const map = {
+      spanish: "es-ES",
+      english: "en-US",
+      french: "fr-FR",
+      german: "de-DE",
+      italian: "it-IT",
+      portuguese: "pt-BR",
+      japanese: "ja-JP",
+      chinese: "zh-CN",
+      korean: "ko-KR",
+    };
+    return map[lang] || lang;
   }
 
   // ----------------------------------------------------------- microphone
@@ -535,6 +608,11 @@ class VoiceAssistantController {
     // when the user navigates away.
     if (event.target.closest("a")) return;
     if (this.recording || this.state === "transcribing") return;
+
+    // Stop any ongoing speech synthesis so the user can interrupt mid-speech
+    if (typeof window.speechSynthesis !== "undefined") {
+      window.speechSynthesis.cancel();
+    }
 
     if (this.state === "loading" || (this.state === "error" && !this.ready)) {
       // The model is still loading (or failed to load): (re)start the preload

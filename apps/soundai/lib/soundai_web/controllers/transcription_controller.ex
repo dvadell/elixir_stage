@@ -14,10 +14,10 @@ defmodule SoundaiWeb.TranscriptionController do
   """
   def create(conn, %{"text" => text} = params) do
     case Soundai.Conversation.submit_transcript(text) do
-      {:ok, _text} ->
+      {:ok, response} ->
         conn
         |> put_status(:created)
-        |> json(%{ok: true, language: Map.get(params, "language")})
+        |> json(%{ok: true, response: response, language: Map.get(params, "language")})
 
       {:error, reason} ->
         conn

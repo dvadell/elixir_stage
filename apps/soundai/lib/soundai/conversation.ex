@@ -3,9 +3,9 @@ defmodule Soundai.Conversation do
   Entry point for transcripts produced by the browser-side Whisper STT.
 
   The controller hands transcribed text to `submit_transcript/1` and nothing
-  else. Today the transcript is only normalized and logged; the follow-up LLM
-  relay (through Needle) is added inside this function without touching the
-  web layer.
+  else. Today the transcript is normalized and echoed back as the `response`
+  field; the follow-up LLM relay (through Needle) is added inside this function
+  without touching the web layer.
   """
 
   require Logger
