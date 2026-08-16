@@ -1,10 +1,18 @@
-// HTTP entry point (T0001: node:http, no framework).
+// HTTP entry point (node:http, no framework).
 //
 // Routes (PRD.md §7):
 //   GET  /healthz  -> 200 {"status":"ok"}                      liveness, process up
 //   GET  /readyz   -> 200 {"status":"ready"} | 503 {"status":"starting"}
-//   POST /v1/tts   -> 503 not_ready (stub; T0002 wires the model)
+//   POST /v1/tts   -> 200 audio/wav | 400/413/422/503/500 JSON error
 //   other          -> 404 {"error":{"code":"not_found",...}}
+//
+// POST /v1/tts flow (T0002):
+//   parse JSON (else 400 bad_request)
+//   -> validate text/language (422 missing_text | empty_text | text_too_long |
+//      unsupported_language)
+//   -> readiness check (503 not_ready while the model is loading)
+//   -> tts.synthesize (500 synthesis_failed on failure)
+//   -> wav.encode -> 200 audio/wav + X-TTS-Model, X-TTS-Duration-Ms
 //
 // Error bodies are always JSON: {"error":{"code":...,"message":...}}.
 //
@@ -21,6 +29,7 @@ import { loadConfig } from "./config.mjs";
 import { log } from "./log.mjs";
 import { TTS } from "./tts.mjs";
 import { Queue } from "./queue.mjs";
+import { encodeWav } from "./wav.mjs";
 
 const MAX_BODY_BYTES = 64 * 1024;
 
@@ -37,6 +46,16 @@ function sendError(res, status, code, message) {
   sendJson(res, status, { error: { code, message } });
 }
 
+function sendWav(res, buffer, { model, durationMs }) {
+  res.writeHead(200, {
+    "Content-Type": "audio/wav",
+    "Content-Length": buffer.byteLength,
+    "X-TTS-Model": model,
+    "X-TTS-Duration-Ms": String(Math.round(durationMs)),
+  });
+  res.end(Buffer.from(buffer));
+}
+
 function readBody(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -51,7 +70,9 @@ function readBody(req) {
         // be reused and our 4xx response is actually delivered (destroying the
         // socket here would kill the response mid-flight).
         req.resume();
-        reject(new Error("body too large"));
+        const err = new Error("body too large");
+        err.code = "PAYLOAD_TOO_LARGE";
+        reject(err);
         return;
       }
       chunks.push(chunk);
@@ -61,8 +82,49 @@ function readBody(req) {
   });
 }
 
-// Routes are dispatched by (method, path). cfg/tts/queue are the full set of
-// components T0002/T0003 need; in T0001 only tts drives the responses.
+// PRD.md §7.1 validation. Returns { text, language } or an [status, code,
+// message] error triple. Order: text presence, then blankness, then length,
+// then language.
+function validateTtsBody(body, cfg, supportedLanguages) {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    return [422, "missing_text", "request body must be a JSON object with a \"text\" field"];
+  }
+  const { text } = body;
+  if (text === undefined || text === null) {
+    return [422, "missing_text", "\"text\" is required"];
+  }
+  if (typeof text !== "string") {
+    return [422, "missing_text", "\"text\" must be a string"];
+  }
+  const trimmed = text.trim();
+  if (trimmed.length === 0) {
+    return [422, "empty_text", "\"text\" is blank after trimming"];
+  }
+  if (trimmed.length > cfg.maxTextLength) {
+    return [422, "text_too_long", `\"text\" exceeds ${cfg.maxTextLength} characters`];
+  }
+  const language =
+    body.language === undefined || body.language === null
+      ? cfg.defaultLanguage
+      : typeof body.language === "string"
+        ? body.language.trim()
+        : null;
+  if (language === null) {
+    return [422, "unsupported_language", "\"language\" must be a string"];
+  }
+  if (language.length === 0) {
+    return [422, "unsupported_language", "\"language\" must not be blank"];
+  }
+  if (!supportedLanguages.includes(language)) {
+    return [
+      422,
+      "unsupported_language",
+      `unsupported language "${language}"; supported: ${supportedLanguages.join(", ")}`,
+    ];
+  }
+  return { text: trimmed, language };
+}
+
 export function createServer(cfg, tts, queue) {
   return http.createServer(async (req, res) => {
     const url = new URL(req.url, "http://localhost");
@@ -76,23 +138,70 @@ export function createServer(cfg, tts, queue) {
         let raw;
         try {
           raw = await readBody(req);
-        } catch {
-          sendError(res, 400, "bad_request", "request body could not be read");
+        } catch (err) {
+          if (err?.code === "PAYLOAD_TOO_LARGE") {
+            sendError(
+              res,
+              413,
+              "payload_too_large",
+              `request body exceeds ${MAX_BODY_BYTES} bytes`,
+            );
+          } else {
+            sendError(res, 400, "bad_request", "request body could not be read");
+          }
           return;
         }
-        // T0001 validates JSON parseability only (400), then returns 503
-        // not_ready. T0002 adds field validation (422) + queued synthesis.
+
+        let body;
         try {
-          JSON.parse(raw);
+          body = JSON.parse(raw);
         } catch {
           sendError(res, 400, "bad_request", "request body is not valid JSON");
           return;
         }
+
+        const validated = validateTtsBody(body, cfg, tts.supportedLanguages());
+        if (Array.isArray(validated)) {
+          const [status, code, message] = validated;
+          sendError(res, status, code, message);
+          return;
+        }
+        const { text, language } = validated;
+
         if (!tts.isReady()) {
           sendError(res, 503, "not_ready", "model is still loading");
           return;
         }
-        sendError(res, 500, "synthesis_failed", "synthesis not implemented yet (T0002)");
+
+        // Serialized synthesis goes through the queue (T0003 implements the
+        // bound + timeout; until then every request runs one at a time on the
+        // shared pipeline).
+        let result;
+        try {
+          result = await tts.synthesize(text, language);
+        } catch (err) {
+          log("error", "tts request failed", {
+            code: "synthesis_failed",
+            kind: err?.kind ?? "unknown",
+            model: tts.modelId,
+            textLen: text.length,
+            language,
+            msg: err?.message,
+          });
+          sendError(res, 500, "synthesis_failed", "speech synthesis failed");
+          return;
+        }
+
+        const wav = encodeWav(result.audio, result.samplingRate);
+        const durationMs = (result.audio.length / result.samplingRate) * 1000;
+        log("info", "tts request ok", {
+          model: tts.modelId,
+          language,
+          textLen: text.length,
+          bytes: wav.byteLength,
+          durationMs: Math.round(durationMs),
+        });
+        sendWav(res, wav, { model: tts.modelId, durationMs });
       } else {
         sendError(res, 404, "not_found", `no route for ${req.method} ${url.pathname}`);
       }
@@ -138,18 +247,36 @@ export function main() {
       host: cfg.host,
       port: cfg.port,
       model: cfg.model,
+      dtype: cfg.dtype,
       maxQueue: cfg.maxQueue,
     });
   });
 
-  // Load the model once (T0002). The process stays up regardless (liveness is
-  // independent of the model); /readyz keeps gating traffic until ready.
-  tts
-    .start()
-    .then(() => {
-      if (tts.isReady()) log("info", "model ready", { model: cfg.model });
-    })
-    .catch((err) => log("error", "model load failed", { model: cfg.model, msg: err.message }));
+  // Load the model once at startup (T0002). Readiness gates /v1/tts on it;
+  // liveness (/healthz) never does (TECHNICAL_NOTES.md §9): a failed download
+  // keeps the process up (no crash-loop) while /readyz and /v1/tts report
+  // 503 until the model is usable. On failure (e.g. a transient network error
+  // mid-download) retry with exponential backoff so the pod self-heals
+  // instead of sitting at 503 forever.
+  loadWithRetry(tts, cfg);
+}
+
+const RETRY_DELAYS_MS = [1_000, 5_000, 15_000, 30_000];
+
+async function loadWithRetry(tts, cfg, attempt = 0) {
+  try {
+    await tts.start();
+    // tts.start() logs "[tts] model ready" with loadMs on success.
+  } catch {
+    const delay = RETRY_DELAYS_MS[attempt] ?? RETRY_DELAYS_MS[RETRY_DELAYS_MS.length - 1];
+    log("error", "model load failed; scheduling retry", {
+      model: cfg.model,
+      attempt: attempt + 1,
+      nextRetryMs: delay,
+    });
+    // unref(): never block shutdown on a pending retry.
+    setTimeout(() => loadWithRetry(tts, cfg, attempt + 1), delay).unref();
+  }
 }
 
 // Run main() only when invoked directly (node src/server.mjs), not when a test

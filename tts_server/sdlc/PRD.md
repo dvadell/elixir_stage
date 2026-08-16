@@ -142,6 +142,7 @@ Errors — always JSON `{"error": {"code": <code>, "message": <string>}}`:
 | Status | Code           | Meaning                                    |
 |--------|----------------|--------------------------------------------|
 | 400    | `bad_request`  | invalid JSON body                          |
+| 413    | `payload_too_large` | request body exceeds the size limit   |
 | 422    | `missing_text` / `empty_text` / `text_too_long` / `unsupported_language` | validation failures |
 | 503    | `not_ready`    | model still loading / warming              |
 | 429    | `busy`         | queue full (saturated)                     |
