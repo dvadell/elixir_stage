@@ -6,12 +6,14 @@
 //   POST /v1/tts   -> 200 audio/wav | 400/413/422/503/500 JSON error
 //   other          -> 404 {"error":{"code":"not_found",...}}
 //
-// POST /v1/tts flow (T0002):
+// POST /v1/tts flow (T0002 + T0003a):
 //   parse JSON (else 400 bad_request)
 //   -> validate text/language (422 missing_text | empty_text | text_too_long |
 //      unsupported_language)
 //   -> readiness check (503 not_ready while the model is loading)
-//   -> tts.synthesize (500 synthesis_failed on failure)
+//   -> queue.enqueue (serialized FIFO, bounded): 429 busy on saturation,
+//      500 synthesis_failed on timeout or synthesis failure
+//   -> tts.synthesize (one at a time, per-request timeout)
 //   -> wav.encode -> 200 audio/wav + X-TTS-Model, X-TTS-Duration-Ms
 //
 // Error bodies are always JSON: {"error":{"code":...,"message":...}}.
@@ -20,15 +22,19 @@
 // immediately; readiness gates traffic on model load, liveness never does.
 // The model is loaded once via tts.start() (T0002).
 //
-// Shutdown: SIGTERM/SIGINT stop accepting new connections and exit (full
-// in-flight drain lands in T0003).
+// Shutdown (T0003b): SIGTERM/SIGINT flip a flag, stop accepting new
+// connections, reject any request sneaking in on a keep-alive connection
+// (503 shutting_down), drain in-flight + queued synthesis, then exit 0. A
+// hard deadline TTS_SHUTDOWN_TIMEOUT_MS force-exits 1 if the drain overruns.
+// K8s terminationGracePeriodSeconds (T0004) must exceed the drain budget.
 
 import http from "node:http";
+import { randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { loadConfig } from "./config.mjs";
 import { log } from "./log.mjs";
 import { TTS } from "./tts.mjs";
-import { Queue } from "./queue.mjs";
+import { Queue, QueueError } from "./queue.mjs";
 import { encodeWav } from "./wav.mjs";
 
 const MAX_BODY_BYTES = 64 * 1024;
@@ -125,7 +131,7 @@ function validateTtsBody(body, cfg, supportedLanguages) {
   return { text: trimmed, language };
 }
 
-export function createServer(cfg, tts, queue) {
+export function createServer(cfg, tts, queue, logger = log) {
   return http.createServer(async (req, res) => {
     const url = new URL(req.url, "http://localhost");
     try {
@@ -173,19 +179,56 @@ export function createServer(cfg, tts, queue) {
           return;
         }
 
-        // Serialized synthesis goes through the queue (T0003 implements the
-        // bound + timeout; until then every request runs one at a time on the
-        // shared pipeline).
+        // Serialized synthesis goes through the queue (T0003a): one synthesis
+        // in flight, FIFO, bounded. A full queue returns 429 busy promptly
+        // (no waiting behind an unbounded backlog), and the per-request
+        // timeout turns a hung inference into 500 synthesis_failed without
+        // stalling the next request.
+        const requestId = randomUUID();
+        const enqueuedAt = Date.now();
+        let queueWaitMs = null;
+        let synthMs = null;
+        const job = {
+          requestId,
+          timeoutMs: cfg.synthTimeoutMs,
+          run: () => {
+            queueWaitMs = Date.now() - enqueuedAt;
+            const synthStart = Date.now();
+            return tts.synthesize(text, language, requestId).then((result) => {
+              synthMs = Date.now() - synthStart;
+              return result;
+            });
+          },
+        };
+
         let result;
         try {
-          result = await tts.synthesize(text, language);
+          result = await queue.enqueue(job);
         } catch (err) {
-          log("error", "tts request failed", {
+          if (err instanceof QueueError && err.code === "shutting_down") {
+            logger("warn", "request refused; server shutting down", { requestId });
+            sendError(res, 503, "shutting_down", "server is shutting down");
+            return;
+          }
+          if (err instanceof QueueError && err.code === "queue_full") {
+            logger("warn", "queue full -> 429", { requestId });
+            sendError(res, 429, "busy", "synthesis queue is full; retry later");
+            return;
+          }
+          if (err instanceof QueueError && err.code === "synth_timeout") {
+            // The queue already logged "synthesis timed out" with the request
+            // id and synth duration.
+            sendError(res, 500, "synthesis_failed", "speech synthesis timed out");
+            return;
+          }
+          logger("error", "tts request failed", {
             code: "synthesis_failed",
             kind: err?.kind ?? "unknown",
             model: tts.modelId,
+            requestId,
             textLen: text.length,
             language,
+            queueWaitMs,
             msg: err?.message,
           });
           sendError(res, 500, "synthesis_failed", "speech synthesis failed");
@@ -194,10 +237,13 @@ export function createServer(cfg, tts, queue) {
 
         const wav = encodeWav(result.audio, result.samplingRate);
         const durationMs = (result.audio.length / result.samplingRate) * 1000;
-        log("info", "tts request ok", {
+        logger("info", "tts request ok", {
           model: tts.modelId,
           language,
           textLen: text.length,
+          requestId,
+          queueWaitMs,
+          synthMs,
           bytes: wav.byteLength,
           durationMs: Math.round(durationMs),
         });
@@ -206,10 +252,59 @@ export function createServer(cfg, tts, queue) {
         sendError(res, 404, "not_found", `no route for ${req.method} ${url.pathname}`);
       }
     } catch (err) {
-      log("error", "unhandled request error", { msg: err?.message });
+      logger("error", "unhandled request error", { msg: err?.message });
       if (!res.headersSent) sendError(res, 500, "synthesis_failed", "internal error");
     }
   });
+}
+
+// Builds the graceful-shutdown handler (T0003b). Returns an async function
+// (signal) => void. `exit` is injectable so tests can assert on the exit code
+// without killing the test runner (defaults to process.exit).
+//
+// Flow (TECHNICAL_NOTES.md §5):
+//   SIGTERM -> stop accepting -> queue.shutdown() -> drain (in-flight +
+//   queued) + wait for connections to flush -> exit 0, or force-exit 1 after
+//   TTS_SHUTDOWN_TIMEOUT_MS. Waiting for the server 'close' event (instead of
+//   exiting the instant drain resolves) guarantees the final response is
+//   written before exit.
+export function buildShutdownHandler({ server, queue, cfg, log, exit = process.exit }) {
+  let shuttingDown = false;
+  return async (signal) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    const startedAt = Date.now();
+    const { queued, inFlight } = queue.stats();
+    log("info", "shutting down; stop accepting new connections", { signal, queued, inFlight });
+    queue.shutdown();
+
+    // A signal may race server.listen() (e.g. at boot); close() throws when
+    // not listening, so guard on server.listening.
+    const serverClosed = server.listening
+      ? new Promise((resolve) => {
+          server.once("close", resolve);
+          server.close();
+        })
+      : Promise.resolve();
+
+    const forced = await Promise.race([
+      Promise.all([queue.drain(), serverClosed]).then(() => false),
+      new Promise((resolve) =>
+        // unref(): never keep the process alive past the grace period just to
+        // run the kill switch.
+        setTimeout(() => resolve(true), cfg.shutdownTimeoutMs).unref(),
+      ),
+    ]);
+
+    const drainMs = Date.now() - startedAt;
+    if (forced) {
+      log("error", "shutdown timed out; forcing exit", { signal, drainMs });
+      exit(1);
+      return;
+    }
+    log("info", "drain complete", { signal, queued, inFlight, drainMs });
+    exit(0);
+  };
 }
 
 export function main() {
@@ -225,15 +320,7 @@ export function main() {
   const queue = new Queue({ max: cfg.maxQueue, log });
   const server = createServer(cfg, tts, queue);
 
-  let shuttingDown = false;
-  const shutdown = (signal) => {
-    if (shuttingDown) return;
-    shuttingDown = true;
-    log("info", "shutting down; stop accepting new connections", { signal });
-    server.close(() => process.exit(0));
-    // K8s kill switch if the close overruns the grace period.
-    setTimeout(() => process.exit(1), 10_000).unref();
-  };
+  const shutdown = buildShutdownHandler({ server, queue, cfg, log });
   process.on("SIGTERM", () => shutdown("SIGTERM"));
   process.on("SIGINT", () => shutdown("SIGINT"));
 

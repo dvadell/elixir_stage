@@ -1,12 +1,19 @@
-// T0002 API tests: health endpoints, /v1/tts (validation, synthesis, WAV),
-// config fail-fast.
+// T0002 + T0003a API tests: health endpoints, /v1/tts (validation, synthesis,
+// WAV), serialized queue (saturation 429, timeout 500, isolation), config
+// fail-fast.
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "../src/server.mjs";
 import { loadConfig } from "../src/config.mjs";
 import { TTSError } from "../src/tts.mjs";
+import { Queue } from "../src/queue.mjs";
 
 const cfg = loadConfig({ PORT: "0" });
+
+function makeQueue(max = cfg.maxQueue, logger = () => {}) {
+  return new Queue({ max, log: logger });
+}
+
 // Stub TTS: model not loaded (readiness false); speaks only the MVP language.
 class StubTTS {
   #ready = false;
@@ -19,7 +26,6 @@ class StubTTS {
     return ["spanish"];
   }
 }
-const stubQueue = { max: 8, pending: () => 0, drain: () => Promise.resolve() };
 
 // Ready TTS fake: model loaded; synthesizes a deterministic 1-second 440 Hz
 // sine at the model's 16 kHz sampling rate (drives X-TTS-Duration-Ms = 1000).
@@ -57,7 +63,7 @@ let server;
 let base;
 
 before(async () => {
-  server = createServer(cfg, new StubTTS(), stubQueue);
+  server = createServer(cfg, new StubTTS(), makeQueue());
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   base = `http://127.0.0.1:${server.address().port}`;
 });
@@ -78,7 +84,7 @@ test("GET /readyz -> 503 {status: starting} until model ready", async () => {
 });
 
 test("GET /readyz -> 200 {status: ready} once model is ready", async () => {
-  const srv = createServer(cfg, new ReadyTTS(), stubQueue);
+  const srv = createServer(cfg, new ReadyTTS(), makeQueue());
   const url = await startServer(srv);
   try {
     const res = await fetch(`${url}/readyz`);
@@ -157,7 +163,7 @@ test("POST /v1/tts unsupported language -> 422 unsupported_language", async () =
 });
 
 test("POST /v1/tts language is trimmed before validation", async () => {
-  const srv = createServer(cfg, new ReadyTTS(), stubQueue);
+  const srv = createServer(cfg, new ReadyTTS(), makeQueue());
   const url = await startServer(srv);
   try {
     const res = await fetch(`${url}/v1/tts`, {
@@ -190,7 +196,7 @@ test("POST /v1/tts body over size limit -> 413 payload_too_large", async () => {
 });
 
 test("POST /v1/tts ready -> 200 audio/wav (headers + PCM data)", async () => {
-  const srv = createServer(cfg, new ReadyTTS(), stubQueue);
+  const srv = createServer(cfg, new ReadyTTS(), makeQueue());
   const url = await startServer(srv);
   try {
     const res = await fetch(`${url}/v1/tts`, {
@@ -219,7 +225,7 @@ test("POST /v1/tts ready -> 200 audio/wav (headers + PCM data)", async () => {
 });
 
 test("POST /v1/tts synthesis failure -> 500 synthesis_failed", async () => {
-  const srv = createServer(cfg, new FailingTTS(), stubQueue);
+  const srv = createServer(cfg, new FailingTTS(), makeQueue());
   const url = await startServer(srv);
   try {
     const res = await fetch(`${url}/v1/tts`, {
@@ -228,6 +234,182 @@ test("POST /v1/tts synthesis failure -> 500 synthesis_failed", async () => {
     });
     assert.equal(res.status, 500);
     assert.equal((await res.json()).error.code, "synthesis_failed");
+  } finally {
+    await new Promise((resolve) => srv.close(resolve));
+  }
+});
+
+// --- T0003a: serialized FIFO queue, saturation 429, timeouts, isolation ---
+
+// Captures structured log lines so tests can assert on queue behavior
+// (serialization, requestId, saturation/timeout markers).
+function captureLog() {
+  const lines = [];
+  const logger = (level, msg, fields = {}) => lines.push({ level, msg, ...fields });
+  return { lines, logger };
+}
+
+// Tracks concurrent synthesis calls to prove the queue serializes.
+class TrackingTTS extends ReadyTTS {
+  #inFlight = 0;
+  maxInFlight = 0;
+  async synthesize(text, language) {
+    this.#inFlight++;
+    this.maxInFlight = Math.max(this.maxInFlight, this.#inFlight);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const result = await super.synthesize(text, language);
+    this.#inFlight--;
+    return result;
+  }
+}
+
+// Gated TTS: first synthesis blocks until release() is called.
+function gatedTTS() {
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  class GatedTTS extends ReadyTTS {
+    async synthesize() {
+      await gate;
+      return super.synthesize();
+    }
+  }
+  return { release, TTS: GatedTTS };
+}
+
+// Stalls only the first synthesis (never resolves); later calls work.
+class FirstCallStallsTTS extends ReadyTTS {
+  #stalled = false;
+  async synthesize(text, language) {
+    if (!this.#stalled) {
+      this.#stalled = true;
+      return new Promise(() => {});
+    }
+    return super.synthesize(text, language);
+  }
+}
+
+// Fails only the first synthesis; later calls work.
+class FlakyTTS extends ReadyTTS {
+  #failed = false;
+  async synthesize(text, language) {
+    if (!this.#failed) {
+      this.#failed = true;
+      throw new TTSError("inference", "boom");
+    }
+    return super.synthesize(text, language);
+  }
+}
+
+test("POST /v1/tts concurrent requests serialize through the queue", async () => {
+  const { lines, logger } = captureLog();
+  const tts = new TrackingTTS();
+  const srv = createServer(cfg, tts, makeQueue(cfg.maxQueue, logger), logger);
+  const url = await startServer(srv);
+  try {
+    const responses = await Promise.all(
+      Array.from({ length: 5 }, () =>
+        fetch(`${url}/v1/tts`, { method: "POST", body: JSON.stringify({ text: "Hola" }) }),
+      ),
+    );
+    for (const res of responses) {
+      assert.equal(res.status, 200);
+      assert.equal(res.headers.get("content-type"), "audio/wav");
+      const buf = Buffer.from(await res.arrayBuffer());
+      assert.equal(buf.toString("ascii", 0, 4), "RIFF");
+      assert.equal(buf.toString("ascii", 36, 40), "data");
+    }
+    // Never two syntheses at once on the shared pipeline.
+    assert.equal(tts.maxInFlight, 1);
+    // Every success carries a requestId + latency breakdown.
+    const okLogs = lines.filter((l) => l.msg === "tts request ok");
+    assert.equal(okLogs.length, 5);
+    for (const l of okLogs) {
+      assert.ok(l.requestId, "success log has requestId");
+      assert.equal(typeof l.synthMs, "number");
+      assert.equal(typeof l.queueWaitMs, "number");
+    }
+    assert.equal(new Set(okLogs.map((l) => l.requestId)).size, 5);
+  } finally {
+    await new Promise((resolve) => srv.close(resolve));
+  }
+});
+
+test("POST /v1/tts saturated queue -> 429 busy (JSON error)", async () => {
+  const { lines, logger } = captureLog();
+  const { release, TTS: GatedTTS } = gatedTTS();
+  const srv = createServer(cfg, new GatedTTS(), makeQueue(1, logger), logger);
+  const url = await startServer(srv);
+  try {
+    const pending = Array.from({ length: 3 }, () =>
+      fetch(`${url}/v1/tts`, { method: "POST", body: JSON.stringify({ text: "Hola" }) }),
+    );
+    // First request is in flight, second queued, third rejected: the 429
+    // surfaces while the gated requests are still pending. Race for it so we
+    // don't wait behind the gate.
+    const busy = await Promise.race(
+      pending.map((p) => p.then((res) => (res.status === 429 ? res : null))),
+    );
+    assert.ok(busy, "a request was rejected while the queue was saturated");
+    assert.equal((await busy.json()).error.code, "busy");
+    assert.ok(lines.some((l) => l.msg === "queue full -> 429"), "logs saturation");
+    release();
+    const results = await Promise.all(pending);
+    assert.deepEqual(results.map((r) => r.status).sort(), [200, 200, 429]);
+    for (const res of results) {
+      if (res.status === 200) {
+        assert.equal(res.headers.get("content-type"), "audio/wav");
+        const buf = Buffer.from(await res.arrayBuffer());
+        assert.equal(buf.toString("ascii", 0, 4), "RIFF");
+      }
+    }
+  } finally {
+    release();
+    await new Promise((resolve) => srv.close(resolve));
+  }
+});
+
+test("POST /v1/tts stalled synthesis -> 500 after timeout; next request succeeds", async () => {
+  const { lines, logger } = captureLog();
+  const shortTimeoutCfg = loadConfig({ PORT: "0", TTS_SYNTH_TIMEOUT_MS: "50" });
+  const srv = createServer(shortTimeoutCfg, new FirstCallStallsTTS(), makeQueue(8, logger), logger);
+  const url = await startServer(srv);
+  try {
+    const first = await fetch(`${url}/v1/tts`, {
+      method: "POST",
+      body: JSON.stringify({ text: "Hola" }),
+    });
+    assert.equal(first.status, 500);
+    assert.equal((await first.json()).error.code, "synthesis_failed");
+    assert.ok(lines.some((l) => l.msg === "synthesis timed out"), "logs timeout");
+    const second = await fetch(`${url}/v1/tts`, {
+      method: "POST",
+      body: JSON.stringify({ text: "Hola" }),
+    });
+    assert.equal(second.status, 200);
+    assert.equal(second.headers.get("content-type"), "audio/wav");
+  } finally {
+    await new Promise((resolve) => srv.close(resolve));
+  }
+});
+
+test("POST /v1/tts failing synthesis is isolated; next request succeeds", async () => {
+  const srv = createServer(cfg, new FlakyTTS(), makeQueue());
+  const url = await startServer(srv);
+  try {
+    const first = await fetch(`${url}/v1/tts`, {
+      method: "POST",
+      body: JSON.stringify({ text: "Hola" }),
+    });
+    assert.equal(first.status, 500);
+    assert.equal((await first.json()).error.code, "synthesis_failed");
+    const second = await fetch(`${url}/v1/tts`, {
+      method: "POST",
+      body: JSON.stringify({ text: "Hola" }),
+    });
+    assert.equal(second.status, 200);
+    assert.equal(second.headers.get("content-type"), "audio/wav");
   } finally {
     await new Promise((resolve) => srv.close(resolve));
   }

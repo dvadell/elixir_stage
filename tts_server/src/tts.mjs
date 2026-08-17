@@ -10,10 +10,12 @@
 //
 //   await tts.start()
 //     Configures env (TECHNICAL_NOTES.md §2) and loads the pipeline for
-//     cfg.model (CPU/WASM, dtype from cfg) ONCE. Download progress is logged
-//     as milestones so a cold pod is observable. Sets the readiness flag when
-//     the model is usable; on failure the process stays up (liveness is
-//     independent) and /readyz keeps gating traffic.
+//     cfg.model (CPU/WASM, dtype from cfg) ONCE. A cold start (no cache)
+//     downloads the model and logs progress milestones so it is observable; a
+//     cache-hit start loads from disk and logs "model loaded from cache"
+//     instead (T0003c). Sets the readiness flag when the model is usable; on
+//     failure the process stays up (liveness is independent) and /readyz keeps
+//     gating traffic.
 //
 //   tts.isReady() -> boolean
 //     Readiness for /readyz; false until the model finishes loading.
@@ -21,9 +23,10 @@
 //   tts.supportedLanguages() -> string[]
 //     Keys of the language -> model map, for request validation.
 //
-//   await tts.synthesize(text, language) -> { audio: Float32Array, samplingRate: number }
+//   await tts.synthesize(text, language, requestId = null) -> { audio: Float32Array, samplingRate: number }
 //     One synthesis on the shared pipeline. Throws TTSError("inference") on
-//     failure, TTSError("loading") if the model is not ready.
+//     failure, TTSError("loading") if the model is not ready. requestId is
+//     only used for the failure log line.
 //
 // Invariants (TECHNICAL_NOTES.md §3, §9):
 //   - One synthesis in flight per pipeline; callers MUST go through the queue.
@@ -31,6 +34,8 @@
 //   - Text is untrusted: it is only ever passed to the model, never logged in
 //     full by default (log length, not content).
 
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { env, pipeline } from "@huggingface/transformers";
 
 // Language -> HF model id (data-driven; PRD §4: MVP ships Spanish only).
@@ -52,6 +57,8 @@ export class TTS {
   #ready = false;
   #pipeline = null; // loaded pipeline instance, reused for every request
   #modelId;
+  #cacheDir = null; // effective cache dir (configured or transformers default)
+  #preCached = false; // the model was already in the cache before this start
   #progressPct = {}; // per-file throttled download % (events are transient)
 
   constructor(cfg, log) {
@@ -67,6 +74,16 @@ export class TTS {
     env.useBrowserCache = false;
     env.useWasmCache = false;
     env.logLevel = "warning";
+
+    // transformers.js replays its per-file progress events on cache hits too,
+    // so the events alone cannot tell a download from a cache read (T0003c).
+    // Check the cache up front instead: a populated model dir means this start
+    // will read from disk, so the "download" milestones below are suppressed.
+    this.#cacheDir = cfg.cacheDir ?? env.cacheDir;
+    this.#preCached =
+      typeof this.#cacheDir === "string" &&
+      this.#cacheDir.length > 0 &&
+      existsSync(join(this.#cacheDir, this.#modelId));
   }
 
   // Data-driven language map; request languages are validated against it.
@@ -89,6 +106,12 @@ export class TTS {
   async start() {
     const startedAt = Date.now();
     this.#log("info", "loading model", { model: this.#modelId, dtype: this.#cfg.dtype });
+    if (this.#preCached) {
+      this.#log("info", "model loaded from cache", {
+        model: this.#modelId,
+        cacheDir: this.#cacheDir,
+      });
+    }
     try {
       // The loaded pipeline is reused for every request (no per-request
       // downloads). "cpu" is the valid backend in the Node build (v4.2.0
@@ -116,8 +139,11 @@ export class TTS {
   }
 
   // First start downloads the model (~38 MB q8); log each file's start,
-  // completion, and 25%-step progress so a cold pod is observable.
+  // completion, and 25%-step progress so a cold pod is observable. On a
+  // cache-hit start these events are replayed for the disk read, so they are
+  // suppressed entirely (the "model loaded from cache" line covers that case).
   #onProgress(data) {
+    if (this.#preCached) return;
     if (!data || !data.status) return;
     switch (data.status) {
       case "initiate":
@@ -150,7 +176,7 @@ export class TTS {
     }
   }
 
-  async synthesize(text, language) {
+  async synthesize(text, language, requestId = null) {
     if (!this.#ready || !this.#pipeline) {
       throw new TTSError("loading", "model is not ready");
     }
@@ -171,6 +197,7 @@ export class TTS {
       // Never log the full untrusted text; length only.
       this.#log("error", "synthesis failed", {
         model: this.#modelId,
+        requestId,
         textLen: text?.length ?? 0,
         language: language ?? null,
         msg: err?.message,

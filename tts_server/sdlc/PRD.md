@@ -208,7 +208,9 @@ Errors — always JSON `{"error": {"code": <code>, "message": <string>}}`:
 |--------|--------------------------------------------------------|
 | T0001  | Scaffold: HTTP server, config, `/healthz` + `/readyz`, Dockerfile |
 | T0002  | Synthesis: model load, WAV encoding, `POST /v1/tts`    |
-| T0003  | Robust serving: serialized queue, timeouts, graceful shutdown, model cache |
+| T0003a | Robust serving: serialized FIFO queue + timeouts (429/500) |
+| T0003b | Robust serving: graceful shutdown (drain in-flight + queued work) |
+| T0003c | Robust serving: model-cache persistence + worker_threads note (docs) |
 | T0004  | Kubernetes deployment: manifests, probes, resources, model-cache volume |
 | T0005  | Observability + benchmark: logs, latency metrics, load test, memory |
 
@@ -223,7 +225,7 @@ Errors — always JSON `{"error": {"code": <code>, "message": <string>}}`:
 ## 13. Open questions
 
 1. Is a single pod with one synthesis worker enough, or will the worker_threads
-   pool (T0003 future) be needed for expected concurrency?
+   pool (T0003c note) be needed for expected concurrency?
 2. Should the model be baked into the image (faster start, larger image) instead
    of downloaded + cached at first start?
 3. Do we eventually want a non-Spanish model (the API already carries

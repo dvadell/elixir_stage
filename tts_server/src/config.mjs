@@ -17,6 +17,7 @@
 //   maxTextLength: number    TTS_MAX_TEXT_LENGTH    default 1000
 //   maxQueue: number         TTS_MAX_QUEUE          default 8
 //   synthTimeoutMs: number   TTS_SYNTH_TIMEOUT_MS   default 30000
+//   shutdownTimeoutMs: number TTS_SHUTDOWN_TIMEOUT_MS default 20000
 //   cacheDir: string|null    TTS_CACHE_DIR          default null (transformers default)
 
 function strEnv(env, name, def) {
@@ -52,6 +53,7 @@ export function loadConfig(env = process.env) {
     maxTextLength: intEnv(env, "TTS_MAX_TEXT_LENGTH", 1000, { min: 1 }),
     maxQueue: intEnv(env, "TTS_MAX_QUEUE", 8, { min: 1 }),
     synthTimeoutMs: intEnv(env, "TTS_SYNTH_TIMEOUT_MS", 30000, { min: 1 }),
+    shutdownTimeoutMs: intEnv(env, "TTS_SHUTDOWN_TIMEOUT_MS", 20000, { min: 1 }),
     cacheDir: strEnv(env, "TTS_CACHE_DIR", null),
   };
 }

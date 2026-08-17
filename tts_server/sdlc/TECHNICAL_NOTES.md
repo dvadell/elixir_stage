@@ -99,8 +99,11 @@ No external dependency needed; ~30 lines. Return `Content-Type: audio/wav`.
 - **Plain `node:http`** — one POST route + two GET health routes; a framework
   dep buys nothing here and bloats the image.
 - Graceful shutdown: on `SIGTERM`/`SIGINT`, stop accepting, drain the queue
-  (finish in-flight + queued synthesis), then exit 0. K8s `terminationGracePeriodSeconds`
-  must be ≥ the drain budget.
+  (finish in-flight + queued synthesis), then exit 0. A hard deadline
+  `TTS_SHUTDOWN_TIMEOUT_MS` force-exits 1 if the drain overruns. K8s
+  `terminationGracePeriodSeconds` (T0004) must be ≥ the drain budget
+  (`TTS_SHUTDOWN_TIMEOUT_MS` + a safety margin, e.g. 30 s for the 20 s
+  default).
 - Configuration via env (all with defaults):
 
 | Env var                  | Default              | Meaning                                |
@@ -113,6 +116,7 @@ No external dependency needed; ~30 lines. Return `Content-Type: audio/wav`.
 | `TTS_MAX_TEXT_LENGTH`    | `1000`               | max chars per request                  |
 | `TTS_MAX_QUEUE`          | `8`                  | queue bound before 429                 |
 | `TTS_SYNTH_TIMEOUT_MS`   | `30000`              | per-synthesis timeout                  |
+| `TTS_SHUTDOWN_TIMEOUT_MS`| `20000`              | drain deadline before force-exit 1     |
 | `TTS_CACHE_DIR`          | transformers default | model cache dir (mounted volume in k8s)|
 
 - Logs: structured `{level, msg, requestId, queueWaitMs, synthMs, encodeMs,
@@ -157,6 +161,15 @@ CMD ["node", "src/server.mjs"]
 - Model cache: either bake the model into the image (faster start, bigger image)
   or mount a `PersistentVolumeClaim` at `TTS_CACHE_DIR`. EmptyDir re-downloads
   on every pod start (~8 s load + download) — acceptable during development.
+- **Model-cache contract (T0003c → T0004)**: the Deployment **must** mount a
+  `PersistentVolumeClaim` at the `TTS_CACHE_DIR` path (or bake the model into
+  the image) so restarts reuse the cached model instead of re-downloading it.
+  The volume itself lands in T0004; T0003c verifies the cache works
+  end-to-end — a cold start (empty cache) downloads and logs progress, a warm
+  start reads from disk, logs `model loaded from cache`, and loads in
+  milliseconds-to-seconds (no `model download` lines). An `emptyDir` volume
+  re-downloads on **every** pod start (~8 s load + ~38 MB download) — fine for
+  development only, not for production rollouts.
 - **Service** (`deploy/service.yaml`): `ClusterIP` only, port 8080 → targetPort
   8080. **Not** exposed externally; cluster network policy is the boundary.
 
