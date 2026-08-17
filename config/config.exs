@@ -26,6 +26,13 @@ import Config
 config :soundai,
   generators: [timestamp_type: :utc_datetime]
 
+# In-process TTS via Ortex/ONNX Runtime. The server only starts (and the
+# /api/tts endpoint only serves audio) when the model file actually exists at
+# the configured path. Override with e.g. SOUNDAI_TTS_MODEL_PATH in runtime.exs.
+config :soundai, Soundai.TTS,
+  model_path: "tts/model.onnx",
+  max_text_length: 1000
+
 # Configure the endpoint
 config :soundai, SoundaiWeb.Endpoint,
   url: [host: "localhost"],

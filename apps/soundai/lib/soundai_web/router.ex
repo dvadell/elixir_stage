@@ -28,5 +28,6 @@ defmodule SoundaiWeb.Router do
     pipe_through :api
 
     post "/transcriptions", TranscriptionController, :create
+    post "/tts", TTSController, :create
   end
 end

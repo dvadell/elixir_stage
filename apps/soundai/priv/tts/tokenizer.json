@@ -1,0 +1,103 @@
+{
+    "version": "1.0",
+    "truncation": null,
+    "padding": null,
+    "added_tokens": [
+        {
+            "id": 45,
+            "content": "<unk>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+        }
+    ],
+    "normalizer": {
+        "type": "Sequence",
+        "normalizers": [
+            {
+                "type": "Lowercase"
+            },
+            {
+                "type": "Replace",
+                "pattern": {
+                    "Regex": "[^7avc\u201405\u00f38pyz4m\u00fcks\u00e1qhn\u00e9_91ft xd\u00edb3jgl2iue\u00fao\u00f1r6]"
+                },
+                "content": ""
+            },
+            {
+                "type": "Strip",
+                "strip_left": true,
+                "strip_right": true
+            },
+            {
+                "type": "Replace",
+                "pattern": {
+                    "Regex": "(?=.)|(?<!^)$"
+                },
+                "content": "7"
+            }
+        ]
+    },
+    "pre_tokenizer": {
+        "type": "Split",
+        "pattern": {
+            "Regex": ""
+        },
+        "behavior": "Isolated",
+        "invert": false
+    },
+    "post_processor": null,
+    "decoder": null,
+    "model": {
+        "vocab": {
+            "7": 0,
+            "a": 1,
+            "v": 2,
+            "c": 3,
+            "\u2014": 4,
+            "0": 5,
+            "5": 6,
+            "\u00f3": 7,
+            "8": 8,
+            "p": 9,
+            "y": 10,
+            "z": 11,
+            "4": 12,
+            "m": 13,
+            "\u00fc": 14,
+            "k": 15,
+            "s": 16,
+            "\u00e1": 17,
+            "q": 18,
+            "h": 19,
+            "n": 20,
+            "\u00e9": 21,
+            "_": 22,
+            "9": 23,
+            "1": 24,
+            "f": 25,
+            "t": 26,
+            " ": 27,
+            "x": 28,
+            "d": 29,
+            "\u00ed": 30,
+            "b": 31,
+            "3": 32,
+            "j": 33,
+            "g": 34,
+            "l": 35,
+            "2": 36,
+            "i": 37,
+            "u": 38,
+            "e": 39,
+            "\u00fa": 40,
+            "o": 41,
+            "\u00f1": 42,
+            "r": 43,
+            "6": 44,
+            "<unk>": 45
+        }
+    }
+}

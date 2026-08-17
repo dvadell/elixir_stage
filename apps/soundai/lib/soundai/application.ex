@@ -15,8 +15,19 @@ defmodule Soundai.Application do
       SoundaiWeb.Endpoint
     ]
 
+    # In-process TTS (Ortex/ONNX) — only started when a model is configured.
+    children = children ++ tts_server_children()
+
     opts = [strategy: :one_for_one, name: Soundai.Supervisor]
     Supervisor.start_link(children, opts)
+  end
+
+  defp tts_server_children do
+    if Soundai.TTS.enabled?() do
+      [{Soundai.TTS.OrtexServer, model_path: Soundai.TTS.model_path()}]
+    else
+      []
+    end
   end
 
   # Tell Phoenix to update the endpoint configuration

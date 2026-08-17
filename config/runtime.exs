@@ -23,6 +23,13 @@ end
 config :soundai, SoundaiWeb.Endpoint,
   http: [port: String.to_integer(System.get_env("SOUNDAI_PORT", System.get_env("PORT", "4002")))]
 
+# Optional in-process TTS model (Ortex/ONNX). When unset, the dev default
+# (priv/tts/model_quantized.onnx) applies; when the file is absent the
+# /api/tts endpoint reports 503 "not ready".
+if model_path = System.get_env("SOUNDAI_TTS_MODEL_PATH") do
+  config :soundai, Soundai.TTS, model_path: model_path
+end
+
 if config_env() == :dev do
   # Reload browser tabs when matching files change.
   config :soundai, SoundaiWeb.Endpoint,

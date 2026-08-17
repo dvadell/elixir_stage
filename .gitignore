@@ -19,3 +19,6 @@ erl_crash.dump
 # Also ignore archive artifacts (built via "mix archive.build").
 *.ez
 
+# Downloaded ONNX TTS model (fetched from Hugging Face, see apps/soundai/priv/tts).
+apps/soundai/priv/tts/*.onnx
+
