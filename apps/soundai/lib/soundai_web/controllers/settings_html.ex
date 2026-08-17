@@ -41,6 +41,13 @@ defmodule SoundaiWeb.SettingsHTML do
       )
     },
     {
+      "server",
+      gettext("Servidor (Elixir + ONNX)"),
+      gettext(
+        "Synthesized by the server via the /api/tts endpoint (VITS/ONNX). Nothing to download; requires the model to be installed on the server and a working network connection."
+      )
+    },
+    {
       "native",
       gettext("Voz nativa del sistema"),
       gettext(

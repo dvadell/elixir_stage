@@ -16,63 +16,142 @@ msgstr ""
 msgid "Actions"
 msgstr ""
 
-#: lib/soundai_web/components/layouts.ex:101
-#: lib/soundai_web/components/layouts.ex:116
-#, elixir-autogen, elixir-format
-msgid "Attempting to reconnect"
-msgstr ""
-
-#: lib/soundai_web/live/home_live.ex:84
+#: lib/soundai_web/controllers/home_html/index.html.heex:45
 #, elixir-autogen, elixir-format
 msgid "Hold to record"
 msgstr ""
 
-#: lib/soundai_web/live/home_live.ex:65
+#: lib/soundai_web/controllers/home_html/index.html.heex:70
 #, elixir-autogen, elixir-format
 msgid "Hold to talk"
 msgstr ""
 
-#: lib/soundai_web/live/home_live.ex:66
-#, elixir-autogen, elixir-format
-msgid "Listening…"
-msgstr ""
-
-#: lib/soundai_web/live/home_live.ex:112
+#: lib/soundai_web/controllers/home_html/index.html.heex:77
 #, elixir-autogen, elixir-format
 msgid "Preparing Whisper…"
-msgstr ""
-
-#: lib/soundai_web/components/layouts.ex:108
-#, elixir-autogen, elixir-format
-msgid "Something went wrong!"
-msgstr ""
-
-#: lib/soundai_web/live/home_live.ex:43
-#, elixir-autogen, elixir-format
-msgid "Something went wrong."
-msgstr ""
-
-#: lib/soundai_web/live/home_live.ex:69
-#, elixir-autogen, elixir-format
-msgid "Tap to retry"
-msgstr ""
-
-#: lib/soundai_web/live/home_live.ex:68
-#, elixir-autogen, elixir-format
-msgid "Tap to talk again"
-msgstr ""
-
-#: lib/soundai_web/live/home_live.ex:67
-#, elixir-autogen, elixir-format
-msgid "Transcribing…"
-msgstr ""
-
-#: lib/soundai_web/components/layouts.ex:93
-#, elixir-autogen, elixir-format
-msgid "We can't find the internet"
 msgstr ""
 
 #: lib/soundai_web/components/core_components.ex:82
 #, elixir-autogen, elixir-format
 msgid "close"
+msgstr ""
+
+#: lib/soundai_web/controllers/settings_html/index.html.heex:32
+#, elixir-autogen, elixir-format
+msgid "Applies the next time you open the voice assistant; the model is downloaded on first use."
+msgstr ""
+
+#: lib/soundai_web/controllers/settings_html/index.html.heex:90
+#, elixir-autogen, elixir-format
+msgid "Back to the voice assistant"
+msgstr ""
+
+#: lib/soundai_web/controllers/settings_html.ex:24
+#, elixir-autogen, elixir-format
+msgid "Best accuracy, noticeably better Spanish, but slower and a larger download."
+msgstr ""
+
+#: lib/soundai_web/controllers/settings_html.ex:12
+#, elixir-autogen, elixir-format
+msgid "Fastest and lightest, lowest accuracy. Best for very short utterances or slow devices."
+msgstr ""
+
+#: lib/soundai_web/controllers/settings_html.ex:19
+#, elixir-autogen, elixir-format
+msgid "Good accuracy and speed. The default; works well on most devices."
+msgstr ""
+
+#: lib/soundai_web/controllers/settings_html/index.html.heex:12
+#, elixir-autogen, elixir-format
+msgid "STT model"
+msgstr ""
+
+#: lib/soundai_web/components/layouts.ex:59
+#, elixir-autogen, elixir-format
+msgid "Settings"
+msgstr ""
+
+#: lib/soundai_web/controllers/home_html/index.html.heex:9
+#, elixir-autogen, elixir-format
+msgid "Speech-to-text settings"
+msgstr ""
+
+#: lib/soundai_web/controllers/settings_html.ex:18
+#, elixir-autogen, elixir-format
+msgid "Whisper Base — balanced"
+msgstr ""
+
+#: lib/soundai_web/controllers/settings_html.ex:23
+#, elixir-autogen, elixir-format
+msgid "Whisper Small — best Spanish"
+msgstr ""
+
+#: lib/soundai_web/controllers/settings_html.ex:11
+#, elixir-autogen, elixir-format
+msgid "Whisper Tiny — fastest"
+msgstr ""
+
+#: lib/soundai_web/controllers/home_html/index.html.heex:31
+#, elixir-autogen, elixir-format
+msgid "Loading speech model…"
+msgstr ""
+
+#: lib/soundai_web/controllers/settings_html/index.html.heex:69
+#, elixir-autogen, elixir-format
+msgid "Applies the next time you open the voice assistant. Local models are downloaded on first use."
+msgstr ""
+
+#: lib/soundai_web/controllers/settings_html/index.html.heex:5
+#, elixir-autogen, elixir-format
+msgid "Choose the speech-to-text model and text-to-speech engine the voice assistant uses."
+msgstr ""
+
+#: lib/soundai_web/controllers/home_html/index.html.heex:38
+#, elixir-autogen, elixir-format
+msgid "Downloading:"
+msgstr ""
+
+#: lib/soundai_web/controllers/settings_html.ex:39
+#, elixir-autogen, elixir-format
+msgid "Local Spanish TTS model (VITS). Runs in the browser after first download. No audio leaves your device."
+msgstr ""
+
+#: lib/soundai_web/controllers/settings_html.ex:38
+#, elixir-autogen, elixir-format
+msgid "MMS Español — balanced"
+msgstr ""
+
+#: lib/soundai_web/components/layouts/root.html.heex:48
+#, elixir-autogen, elixir-format
+msgid "Offline — speech recognition still works locally"
+msgstr ""
+
+#: lib/soundai_web/controllers/settings_html.ex:45
+#, elixir-autogen, elixir-format
+msgid "Servidor (Elixir + ONNX)"
+msgstr ""
+
+#: lib/soundai_web/controllers/settings_html.ex:46
+#, elixir-autogen, elixir-format
+msgid "Synthesized by the server via the /api/tts endpoint (VITS/ONNX). Nothing to download; requires the model to be installed on the server and a working network connection."
+msgstr ""
+
+#: lib/soundai_web/controllers/settings_html/index.html.heex:49
+#, elixir-autogen, elixir-format
+msgid "Text-to-speech engine"
+msgstr ""
+
+#: lib/soundai_web/controllers/settings_html/index.html.heex:3
+#, elixir-autogen, elixir-format
+msgid "Voice assistant settings"
+msgstr ""
+
+#: lib/soundai_web/controllers/settings_html.ex:52
+#, elixir-autogen, elixir-format
+msgid "Voz nativa del sistema"
+msgstr ""
+
+#: lib/soundai_web/controllers/settings_html.ex:53
+#, elixir-autogen, elixir-format
+msgid "Your browser's built-in voices. No download required. Quality varies by operating system."
 msgstr ""

@@ -257,6 +257,139 @@ class TransformersTTSEngine {
 }
 
 // ---------------------------------------------------------------------------
+// Server TTS engine (Elixir /api/tts endpoint)
+// ---------------------------------------------------------------------------
+
+class ServerTTSEngine {
+  constructor() {
+    this._ready = false;
+    this._initPromise = null;
+    this._audioContext = null;
+    this._sourceNode = null;
+    this._controller = null;
+  }
+
+  init() {
+    if (this._initPromise) return this._initPromise;
+    this._initPromise = this._checkEndpoint();
+    return this._initPromise;
+  }
+
+  // Verifies the endpoint is reachable without synthesizing real audio: a
+  // blank text is always rejected with a 4xx validation error, which still
+  // proves the route exists. Only a network-level failure is unreachable.
+  async _checkEndpoint() {
+    try {
+      await fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: "" }),
+      });
+      this._ready = true;
+      console.log("[soundai] Server TTS engine ready (/api/tts reachable)");
+    } catch (err) {
+      this._ready = false;
+      throw new Error(`Server TTS endpoint unreachable: ${err?.message || err}`);
+    }
+  }
+
+  isReady() {
+    return this._ready;
+  }
+
+  speak(text, language, options = {}) {
+    const { onend, onerror } = options;
+
+    if (!this._ready) {
+      if (onerror) onerror(new Error("Server TTS engine not ready"));
+      return;
+    }
+
+    this._stopPlayback();
+
+    const controller = new AbortController();
+    this._controller = controller;
+
+    fetch("/api/tts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+      signal: controller.signal,
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body?.error?.message || `Server TTS failed (HTTP ${res.status})`);
+        }
+        const audio = await res.arrayBuffer();
+        if (controller.signal.aborted) return;
+        this._playAudio(audio, onend, onerror);
+      })
+      .catch((err) => {
+        if (err?.name === "AbortError") return;
+        if (onerror) onerror(err);
+      });
+  }
+
+  async _playAudio(arrayBuffer, onend, onerror) {
+    try {
+      if (!this._audioContext || this._audioContext.state === "closed") {
+        this._audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      const ctx = this._audioContext;
+      if (ctx.state === "suspended") {
+        await ctx.resume();
+      }
+
+      const buffer = await ctx.decodeAudioData(arrayBuffer);
+
+      const source = ctx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(ctx.destination);
+      this._sourceNode = source;
+
+      source.onended = () => {
+        this._sourceNode = null;
+        if (onend) onend();
+      };
+
+      source.onerror = () => {
+        this._sourceNode = null;
+        if (onerror) onerror(new Error("Audio playback failed"));
+      };
+
+      source.start();
+    } catch (err) {
+      if (onerror) onerror(new Error(`Failed to play server WAV: ${err?.message || err}`));
+    }
+  }
+
+  _stopPlayback() {
+    if (this._controller) {
+      try {
+        this._controller.abort();
+      } catch (_err) {
+        // already aborted
+      }
+      this._controller = null;
+    }
+    if (this._sourceNode) {
+      try {
+        this._sourceNode.stop();
+        this._sourceNode.disconnect();
+      } catch (_err) {
+        // already stopped
+      }
+      this._sourceNode = null;
+    }
+  }
+
+  cancel() {
+    this._stopPlayback();
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Language mapping (shared between native engine and voice_assistant.js)
 // ---------------------------------------------------------------------------
 
@@ -281,12 +414,14 @@ function languageToBCP47(lang) {
 
 const _engines = {
   native: NativeTTSEngine,
+  server: ServerTTSEngine,
 };
 
 /**
  * Create a TTS engine instance by id.
  *
- * Known ids: "native" (speechSynthesis).
+ * Known ids: "native" (speechSynthesis), "server" (/api/tts), plus one per
+ * local Transformers.js model in TTS_CONFIG.
  * Unknown ids fall back to the native engine with a console warning.
  */
 export function createTTSEngine(engineId) {

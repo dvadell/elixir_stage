@@ -76,13 +76,13 @@ defmodule Soundai.TTS.OrtexServer do
     end
   end
 
+  defp ensure_model(state), do: {:ok, state}
+
   defp load_model(path) do
     {:ok, Ortex.load(path, [:cpu], 3)}
   rescue
     e -> {:error, Exception.message(e)}
   end
-
-  defp ensure_model(state), do: {:ok, state}
 
   defp tokenize(text) do
     {ids, mask} = VitsTokenizer.tokenize(text)
