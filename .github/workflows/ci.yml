@@ -28,6 +28,9 @@ jobs:
           elixir-version: ${{ env.ELIXIR_VERSION }}
           otp-version: ${{ env.OTP_VERSION }}
 
+      - name: Setup Rust (required to compile :ortex)
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
