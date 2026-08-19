@@ -1,7 +1,9 @@
 defmodule SoundaiWeb.ConversationAudioControllerTest do
   use SoundaiWeb.ConnCase, async: false
 
+  alias Soundai.Conversation
   alias Soundai.Conversation.LLM.FakeAdapter, as: LLMFakeAdapter
+  alias Soundai.Conversation.Store
   alias Soundai.TTS.FakeAdapter, as: TTSFakeAdapter
   alias Soundai.TTS.OrtexServer
 
@@ -51,7 +53,7 @@ defmodule SoundaiWeb.ConversationAudioControllerTest do
     end
 
     test "shares context with the text endpoint via the same conversation cookie" do
-      {:ok, _text, id} = Soundai.Conversation.submit_transcript("Primera pregunta")
+      {:ok, _text, id} = Conversation.submit_transcript("Primera pregunta")
       assert_received {:fake_llm_called, %{messages: first_messages}}
       refute Enum.any?(first_messages, &(&1.role == :assistant))
 
@@ -67,6 +69,24 @@ defmodule SoundaiWeb.ConversationAudioControllerTest do
 
       assert_received {:fake_llm_called, %{messages: second_messages}}
       assert Enum.any?(second_messages, &(&1.role == :assistant))
+    end
+
+    test "reset: true deletes the stored context and returns a fresh id" do
+      {:ok, _text, old_id} = Conversation.submit_transcript("Primera pregunta")
+      assert {:ok, _context} = Store.get(old_id)
+
+      conn =
+        build_conn()
+        |> put_req_cookie("soundai_conversation", old_id)
+        |> post_json(%{"text" => "Pregunta nueva", "reset" => true})
+
+      assert conn.status == 200
+      assert [new_id] = get_resp_header(conn, "x-conversation-id")
+      refute new_id == old_id
+      assert Store.get(old_id) == :error
+
+      assert [set_cookie] = get_resp_header(conn, "set-cookie")
+      assert set_cookie =~ "soundai_conversation=#{new_id}"
     end
 
     test "returns 503 with the LLM text when the TTS model is absent", %{conn: conn} do

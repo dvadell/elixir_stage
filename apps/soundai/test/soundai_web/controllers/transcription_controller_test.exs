@@ -2,6 +2,7 @@ defmodule SoundaiWeb.TranscriptionControllerTest do
   use SoundaiWeb.ConnCase, async: false
 
   alias Soundai.Conversation.LLM.FakeAdapter
+  alias Soundai.Conversation.Store
 
   setup do
     previous = Application.get_env(:soundai, Soundai.Conversation)
@@ -79,6 +80,24 @@ defmodule SoundaiWeb.TranscriptionControllerTest do
 
       assert %{"conversation_id" => returned_id} = json_response(conn, 201)
       refute returned_id == cookie_id
+    end
+
+    test "reset: true deletes the stored context and returns a fresh id", %{conn: conn} do
+      conn = post_json(conn, %{"text" => "Primera pregunta"})
+      old_id = json_response(conn, 201)["conversation_id"]
+      assert {:ok, _context} = Store.get(old_id)
+
+      conn =
+        build_conn()
+        |> put_req_cookie("soundai_conversation", old_id)
+        |> post_json(%{"text" => "Pregunta nueva", "reset" => true})
+
+      assert %{"conversation_id" => new_id} = json_response(conn, 201)
+      refute new_id == old_id
+      assert Store.get(old_id) == :error
+      assert {:ok, _context} = Store.get(new_id)
+      assert_received {:fake_llm_called, %{messages: fresh_messages}}
+      refute Enum.any?(fresh_messages, &(&1.role == :user))
     end
 
     test "language is optional", %{conn: conn} do

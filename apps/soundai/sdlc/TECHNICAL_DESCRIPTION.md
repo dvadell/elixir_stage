@@ -126,7 +126,11 @@ apps/soundai/
 │   └── vendor/                     heroicons plugin, topbar (unused)
 ├── lib/soundai/
 │   ├── application.ex             OTP application / supervisor tree
-│   ├── conversation.ex            receives transcripts; seam for the future LLM relay
+│   ├── conversation.ex            LLM relay seam: submit_transcript/2 (validation,
+│   │                               adapter injection, error vocabulary, reply cap)
+│   ├── conversation/
+│   │   ├── llm.ex                 default LLM adapter -> BranchedLLM.Chat.send_message/3
+│   │   └── store.ex               per-conversation context store (GenServer, idle TTL)
 │   ├── mailer.ex
 │   └── tts/
 │       ├── tts.ex                 server-side TTS seam: synthesize/2 (Ortex)
@@ -134,7 +138,7 @@ apps/soundai/
 │       ├── tts/vits_tokenizer.ex  char-level tokenizer mirroring HF VitsTokenizer
 │       └── tts/wav.ex             Float32 waveform -> 16 kHz PCM WAV encoder
 ├── lib/soundai_web/
-│   ├── router.ex                   get "/", get "/settings", post /api/transcriptions, /api/tts
+│   ├── router.ex                  get "/", get "/settings", post /api/{transcriptions,tts,conversations/audio}
 │   ├── endpoint.ex                 COOP/COEP headers, static serving, no /live socket
 │   ├── controllers/
 │   │   ├── home_controller.ex      renders the voice assistant shell
@@ -142,6 +146,7 @@ apps/soundai/
 │   │   ├── settings_controller.ex  renders the STT + TTS settings shell
 │   │   ├── settings_html/          settings templates
 │   │   ├── transcription_controller.ex  POST /api/transcriptions JSON endpoint
+│   │   ├── conversation_audio_controller.ex  POST /api/conversations/audio WAV endpoint
 │   │   └── tts_controller.ex       POST /api/tts WAV endpoint
 │   └── components/
 │       ├── layouts.ex              app layout, flash_group, theme_toggle
@@ -152,12 +157,14 @@ apps/soundai/
 │   │   └── assets/                 built bundles (gitignored, generated)
 │   └── tts/                        server TTS model (gitignored): model.onnx,
 │                                   tokenizer.json, config.json
-├── sdlc/tickets/                   active tickets (T0011.md)
-│   └── done/                       implemented tickets T0002.md–T0010.md
+├── sdlc/tickets/                   active tickets (T0017.md)
+│   └── done/                       implemented tickets T0002.md–T0016.md
 └── test/
-    ├── soundai/                    TTS unit tests (tts, vits_tokenizer, wav)
-    ├── soundai_web/controllers/    controller tests (home, settings, transcriptions, tts)
-    └── support/tts_fake_adapter.ex test adapter injected into Soundai.TTS
+    ├── soundai/                    unit tests (conversation, tts, vits_tokenizer, wav)
+    ├── soundai_web/controllers/    controller tests (home, settings, transcriptions,
+    │                               conversation_audio, tts)
+    └── support/                    tts_fake_adapter.ex, conversation_fake_adapter.ex
+                                    (test adapters injected into Soundai.TTS / Conversation)
 ```
 
 > Note: `apps/soundai/lib/soundai_web.ex` still defines `live_view`/`live_component`
@@ -174,11 +181,44 @@ apps/soundai/
 |------------|-----------------|--------------------------------------------|
 | `GET /`          | `HomeController.index`    | `home_html/index.html.heex` (full-screen voice assistant) |
 | `GET /settings`  | `SettingsController.index`| `settings_html/index.html.heex`            |
-| `POST /api/transcriptions` | `TranscriptionController.create` | JSON envelope `{"ok": true, "response": <text>, "language": ...}` (no template) |
+| `POST /api/transcriptions` | `TranscriptionController.create` | JSON envelope `{"ok": true, "response": <LLM text>, "conversation_id": ..., "language": ...}` (no template) |
 | `POST /api/tts`  | `TTSController.create`     | `audio/wav` bytes + `X-TTS-Duration-Ms` / `X-TTS-Model` headers (no template) |
+| `POST /api/conversations/audio` | `ConversationAudioController.create` | `audio/wav` (LLM + server TTS) + `X-Conversation-Id` / `X-TTS-Duration-Ms` / `X-TTS-Model` headers + cookie (no template) |
 
 `service_worker.js` is a static file served from `priv/static/` (added to
 `SoundaiWeb.static_paths/0`). `Plug.Static` `only:` includes it.
+
+### 3.1 LLM conversation endpoints (T0013/T0014)
+
+Both JSON endpoints share the same `:api` pipeline (`:accepts`, `:fetch_cookies`),
+the same conversation seam (`Soundai.Conversation.submit_transcript/2`), and the
+same error vocabulary:
+
+| Reason (`Soundai.Conversation`) | HTTP | JSON body |
+|---------------------------------|------|-----------|
+| `{:ok, text, id}`               | 200/201 | success payload (text mode) or WAV (audio mode) + `conversation_id` + cookie |
+| `:empty` / `:too_long` / `:invalid` | 422 | `{"errors": {"text": "..."}}` |
+| `:llm_unavailable`              | 502 | `{"errors": {"text": "LLM is unavailable"}}` |
+| `:llm_timeout`                  | 504 | `{"errors": {"text": "LLM timed out"}}` |
+| TTS `:not_ready` (audio mode)   | 503 | `{"errors": {"text": "server TTS is not ready"}, "response": <LLM text>, "conversation_id": id}` |
+
+The client renders **short Spanish** quiet notes from the status code (never the
+error state): 504 → "El asistente tardó demasiado…", 502/network → "No pude
+conectar con el asistente…", 503 → "El servidor no pudo generar audio…". A body
+`reset: true` (either endpoint) deletes the stored context for the incoming id
+and returns a fresh `conversation_id`; the "Nueva conversación" button clears
+the cookie client-side.
+
+### 3.2 Latency budget
+
+Per utterance: **local STT** (browser, no network) → **LLM** with a bounded
+timeout (`llm_timeout_ms`, default 30 s, passed to
+`BranchedLLM.Chat.send_message/3`; surfaced as `:llm_timeout` by BL-03) → **TTS**
+(server synthesis or browser playback). Replies are capped at
+`max_response_chars` (500) so TTS latency stays bounded. The client also
+enforces its own bounds: a 15 s fetch timeout and a speaking watchdog
+(5–30 s by text length, or the server's `X-TTS-Duration-Ms` + 2 s in audio
+mode) so the UI can never stall (T0011/T0015).
 
 ## 4. The voice assistant page (`/`)
 
@@ -205,7 +245,8 @@ display classes (a Tailwind `hidden` class silently beats the attribute).
 | `#preparing-hint` / `#preparing-progress` | "Preparing Whisper… N%" hint    |
 | `#voice-result`       | bottom transcript/error panel                    |
 | `#voice-error`, `#voice-transcript` | error vs transcript text           |
-| `#voice-send-status`  | non-blocking "Sending…"/offline note under the transcript |
+| `#voice-send-status`  | non-blocking "Sending…"/quiet note under the transcript |
+| `#reset-conversation` | "Nueva conversación" button: clears the `soundai_conversation` cookie |
 
 Server default state: loading screen visible, record button hidden. JS takes
 over on boot (`start()` → `setState("loading")` → `preload()`).
@@ -220,20 +261,24 @@ States: `loading → idle → listening → transcribing → sending → speakin
   (the settings link) are ignored so navigation still works.
 - `preload()` loads the model before the button is interactive; tapping while
   loading/errored re-triggers the preload.
-- On a transcription result, `sendTranscript/1` POSTs `{text, language}` to
-  `/api/transcriptions` with `fetch` while the UI shows the "Sending…" state.
-  The send is best-effort: on success the note disappears; on failure the
-  transcript stays visible under a quiet "offline / couldn't reach the server"
-  note and the UI never enters the error state. When `navigator.onLine` is
+- On a transcription result, `sendTranscript/1` dispatches by the configured
+  TTS engine (T0015):
+  - **audio mode** (`server` engine): one POST to `/api/conversations/audio`;
+    on 200 the returned WAV is played via `ServerTTSEngine.playWav/2`; on 503
+    (server TTS model absent) it falls back to text mode for that utterance
+    with a Spanish quiet note; on 422/502/504/network the transcript stays
+    under a Spanish quiet note. The UI never enters the error state.
+  - **text mode** (native / local VITS): POST to `/api/transcriptions` and the
+    reply text is spoken by that engine (with native fallback).
+- The send is best-effort: on success the note disappears; on failure the
+  transcript stays visible under a quiet note. When `navigator.onLine` is
   false the POST is skipped entirely.
-- On a successful send, the server returns `{"ok": true, "response": "...", "language": "..."}`
-  echoing the transcript. The client speaks the `response` text aloud through
-  the configured TTS engine (`tts_engine.js` — native `speechSynthesis`, a
-  local VITS worker, or the server engine calling `/api/tts`), entering the
-  `speaking` state ("Speaking…"). The engine's `onend` event transitions back
-  to `result`.
-- Starting a new recording (`pointerdown`) calls `ttsEngine.cancel()` so the
-  user can interrupt the assistant mid-speech.
+- Every wait is bounded (T0011/T0015): `fetchWithTimeout` aborts after 15 s,
+  and a speaking watchdog (5–30 s by text length, or the server's
+  `X-TTS-Duration-Ms` + 2 s in audio mode) forces the `result` state if
+  `onend` never fires. Both are cleared on `pointerdown`/`stop`.
+- Starting a new recording (`pointerdown`) calls `ttsEngine.cancel()` and
+  clears the watchdog so the user can interrupt the assistant mid-speech.
 
 ### 4.3 Audio capture
 

@@ -5,6 +5,8 @@
 defmodule SoundaiWeb.TranscriptionController do
   use SoundaiWeb, :controller
 
+  alias Soundai.Conversation.Store
+
   @cookie_name "soundai_conversation"
   @cookie_max_age 60 * 60 * 24 * 7
 
@@ -17,7 +19,7 @@ defmodule SoundaiWeb.TranscriptionController do
   next turn can keep context.
   """
   def create(conn, %{"text" => text} = params) do
-    conversation_id = Map.get(params, "conversation_id") || conn.cookies[@cookie_name]
+    conversation_id = resolve_conversation_id(conn, params)
 
     case Soundai.Conversation.submit_transcript(text, conversation_id) do
       {:ok, response, id} ->
@@ -56,6 +58,23 @@ defmodule SoundaiWeb.TranscriptionController do
     conn
     |> put_status(:unprocessable_entity)
     |> json(%{errors: %{text: "is required"}})
+  end
+
+  # `reset: true` starts a fresh conversation: the stored context (if any) for
+  # the incoming id is deleted and a brand-new id is returned, replacing the
+  # stale cookie. Clients that can clear the cookie themselves don't need it.
+  defp resolve_conversation_id(conn, params) do
+    if Map.get(params, "reset") in [true, "true", "1"] do
+      stale = Map.get(params, "conversation_id") || conn.cookies[@cookie_name]
+
+      if is_binary(stale) do
+        Store.delete(stale)
+      end
+
+      nil
+    else
+      Map.get(params, "conversation_id") || conn.cookies[@cookie_name]
+    end
   end
 
   defp reason_message(:empty), do: "can't be blank"

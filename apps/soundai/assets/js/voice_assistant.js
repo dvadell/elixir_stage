@@ -74,11 +74,13 @@ class VoiceAssistantController {
 
     this.onPointerDown = this.onPointerDown.bind(this);
     this.onPointerUp = this.onPointerUp.bind(this);
+    this.onResetConversation = this.onResetConversation.bind(this);
 
     // DOM nodes driven by the state machine.
     this.ui = {
       loadingScreen: document.getElementById("model-loading"),
       recordButton: document.getElementById("record-button"),
+      resetButton: document.getElementById("reset-conversation"),
       voiceLabel: document.getElementById("voice-label"),
       listeningPing: document.getElementById("listening-ping"),
       listeningDot: document.getElementById("listening-dot"),
@@ -99,6 +101,7 @@ class VoiceAssistantController {
     this.el.addEventListener("pointerdown", this.onPointerDown);
     this.el.addEventListener("pointerup", this.onPointerUp);
     this.el.addEventListener("pointercancel", this.onPointerUp);
+    this.ui.resetButton?.addEventListener("click", this.onResetConversation);
 
     // Load the selected model before the microphone button is shown, so using
     // the assistant never waits on the download.
@@ -110,6 +113,7 @@ class VoiceAssistantController {
     this.el.removeEventListener("pointerdown", this.onPointerDown);
     this.el.removeEventListener("pointerup", this.onPointerUp);
     this.el.removeEventListener("pointercancel", this.onPointerUp);
+    this.ui.resetButton?.removeEventListener("click", this.onResetConversation);
     this.teardownAudio();
     this._stopSpeakWatchdog();
     this.ttsEngine?.cancel();
@@ -240,7 +244,10 @@ class VoiceAssistantController {
   renderResult() {
     const error = this.error;
     const transcript = this.transcript;
-    const visible = Boolean(error || transcript);
+    // The result box also shows when there is only a quiet note (e.g. a
+    // conversation reset confirmation or a failed send) so the user always
+    // gets feedback, never a dead UI.
+    const visible = Boolean(error || transcript || this.sendNote);
     this.setHidden(this.ui.resultBox, !visible);
     if (!visible) return;
 
@@ -473,7 +480,7 @@ class VoiceAssistantController {
   //     the returned text with that engine.
   async sendTranscript(text) {
     if (!navigator.onLine) {
-      this.sendNote = "Offline — transcript kept locally.";
+      this.sendNote = "Sin conexión — el texto se guardó localmente.";
       if (this.state === "sending") this.setState("result");
       return;
     }
@@ -486,7 +493,7 @@ class VoiceAssistantController {
   }
 
   async sendTextMode(text) {
-    let ok = false;
+    let status = 0;
     let responseData = null;
 
     try {
@@ -495,31 +502,30 @@ class VoiceAssistantController {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text, language: this.config.language }),
       });
+      status = response.status;
       if (response.ok) {
         responseData = await response.json();
-        ok = true;
       }
     } catch (_err) {
-      ok = false;
+      status = 0;
     }
 
-    this.sendNote = ok ? null : "Couldn't reach the server — transcript kept locally.";
-
-    if (ok && responseData && typeof responseData.response === "string" && responseData.response.trim() !== "") {
+    if (responseData && typeof responseData.response === "string" && responseData.response.trim() !== "") {
+      this.sendNote = null;
       this.speakText(responseData.response);
-    } else if (this.state === "sending") {
-      if (ok) {
-        // A successful send with no speakable response (e.g. empty text): keep
-        // the transcript with a quiet note, never the error state.
-        this.sendNote = "No response from the server — transcript kept locally.";
-      }
-      this.setState("result");
-    } else {
-      this.render();
+      return;
     }
+
+    // Every expected failure is a quiet Spanish note; never the error state.
+    this.sendNote =
+      status === 200
+        ? "El servidor no devolvió respuesta — el texto se guardó localmente."
+        : this.noteForStatus(status);
+    if (this.state === "sending") this.setState("result");
   }
 
   async sendAudioMode(text) {
+    let status = 0;
     let response;
     try {
       response = await this.fetchWithTimeout("/api/conversations/audio", {
@@ -527,13 +533,12 @@ class VoiceAssistantController {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text, language: this.config.language }),
       });
+      status = response.status;
     } catch (_err) {
-      this.sendNote = "Couldn't reach the server — transcript kept locally.";
-      if (this.state === "sending") this.setState("result");
-      return;
+      status = 0;
     }
 
-    if (response.status === 200) {
+    if (status === 200) {
       const audio = await response.arrayBuffer();
       if (this.state !== "sending") return;
       const durationMs = parseInt(response.headers.get("x-tts-duration-ms") || "0", 10);
@@ -542,7 +547,7 @@ class VoiceAssistantController {
       return;
     }
 
-    if (response.status === 503) {
+    if (status === 503) {
       // Server TTS model absent: automatic one-time fallback to text mode with
       // a quiet note; never the error state.
       this.log("server audio unavailable (503); falling back to text mode");
@@ -551,9 +556,17 @@ class VoiceAssistantController {
       return;
     }
 
-    // 422/502/504 or any other status: quiet note, transcript stays.
-    this.sendNote = "Couldn't reach the server — transcript kept locally.";
+    // 422/502/504/network: quiet Spanish note, transcript stays.
+    this.sendNote = this.noteForStatus(status);
     if (this.state === "sending") this.setState("result");
+  }
+
+  // Short Spanish quiet note for a failed send (PRD §13 / T0016). The server
+  // returns stable status codes; the client renders them in the user's voice.
+  noteForStatus(status) {
+    if (status === 504) return "El asistente tardó demasiado. Inténtalo otra vez.";
+    if (status === 502 || status === 503) return "No pude conectar con el asistente. Inténtalo otra vez.";
+    return "No pude conectar con el asistente. Inténtalo otra vez.";
   }
 
   // Text-mode fallback used when the audio endpoint reports the server TTS
@@ -684,6 +697,21 @@ class VoiceAssistantController {
         this.setState("result");
       },
     });
+  }
+
+  // "Nueva conversación": clears the conversation cookie so the next turn
+  // starts a fresh server-side context, cancels any playback, and returns the
+  // UI to the idle state. Never an error state.
+  onResetConversation(event) {
+    event.preventDefault();
+    this._stopSpeakWatchdog();
+    this.ttsEngine?.cancel();
+    document.cookie = "soundai_conversation=; Max-Age=0; Path=/; SameSite=Lax";
+    this.error = null;
+    this.transcript = null;
+    this.sendNote = "Nueva conversación.";
+    this.setState("idle");
+    this.log("conversation reset (cookie cleared)");
   }
 
   // ------------------------------------------------------ send/speak watchdog

@@ -10,6 +10,8 @@ defmodule Soundai.Conversation.Store do
 
   use GenServer
 
+  require Logger
+
   @name __MODULE__
   @default_ttl_ms 30 * 60 * 1000
 
@@ -111,8 +113,17 @@ defmodule Soundai.Conversation.Store do
         end
       end)
 
+    if removed > 0 do
+      Logger.debug(
+        "Conversation store swept #{removed} expired conversation(s); " <>
+          "#{map_size(entries)} remaining"
+      )
+    end
+
     {:reply, removed, %{state | entries: entries}}
   end
+
+  defp now_ms, do: System.monotonic_time(:millisecond)
 
   defp put_entry(state, id, context, now) do
     update_in(
@@ -121,8 +132,6 @@ defmodule Soundai.Conversation.Store do
       &Map.put(&1, id, %{context: context, last_access: now})
     )
   end
-
-  defp now_ms, do: System.monotonic_time(:millisecond)
 
   defp generate_id do
     :crypto.strong_rand_bytes(16) |> Base.url_encode64(padding: false)
