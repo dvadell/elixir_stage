@@ -2,18 +2,20 @@
 
 Voice-first speech-to-text web app: a single microphone button that transcribes
 Spanish speech locally in the browser using **Whisper** via **Transformers.js**
-(on WebGPU or WASM/CPU), shows the transcript on screen, and speaks the
-server's echo of it aloud through a pluggable TTS engine: the native Web Speech
-API (`speechSynthesis`), a local Transformers.js VITS worker, or the
-**in-process Elixir TTS** (`POST /api/tts`), which runs the same VITS model with
-ONNX Runtime via `Ortex`.
+(on WebGPU or WASM/CPU), shows the transcript on screen, relays it to an **LLM**
+(`branched_llm` → NVIDIA OpenAI-compatible endpoint), and speaks the assistant's
+reply through a pluggable reply path: either a **text mode** (native
+`synthesis` / local Transformers.js VITS worker) or the **audio mode**
+(in-process Elixir TTS, `POST /api/conversations/audio`, which runs the LLM and
+the ONNX/Ortex VITS model in a single round trip).
 
-It is deliberately **offline-first and client-side**: there is **no Phoenix
-LiveView / websocket** at runtime. The server only renders static HTML shells
-and accepts two JSON endpoints; every interaction (mic capture, model load,
-inference, UI state) happens in the browser. Once the page and the speech model
-are cached, STT keeps working with no network at all. The transcribed **text**
-is POSTed to the server as a best-effort call — STT never depends on it.
+It is deliberately **offline-first and client-side** for STT: there is **no
+Phoenix LiveView / websocket** at runtime. The server only renders static HTML
+shells and accepts JSON/audio endpoints; every interaction (mic capture, model
+load, inference, UI state) happens in the browser. Once the page and the speech
+model are cached, STT keeps working with no network at all. The transcribed
+**text** is POSTed to the server as a best-effort call — STT never depends on it;
+the LLM round trip (both reply modes) is online-only.
 
 `soundai` lives in a Phoenix umbrella alongside a sibling app (`soundpanel`).
 
@@ -42,70 +44,81 @@ whisper_worker.js (Web Worker, Transformers.js + Whisper)
   |--> WebGPU (preferred) --> WASM/CPU (fallback)
   v
 transcribed text -> rendered into the DOM by voice_assistant.js
-
-voice_assistant.js -> tts_engine.js (pluggable TTS engine registry)
-  |--> native engine (speechSynthesis) -> speaker
-  |--> transformers engine (local VITS model)
-  |     |
-  |     v
-  |  tts_worker.js (Web Worker, Transformers.js + VITS)
-  |     |--> WebGPU (preferred) --> WASM/CPU (fallback)
-  |     v
-  |  Float32Array audio @16 kHz
-  |     v
-  |  Web Audio API (AudioContext) -> speaker
-  `--> server engine (Elixir /api/tts)
-        |
-        | POST /api/tts {text, language} (JSON, same origin)
-        v
-     SoundaiWeb.TTSController -> Soundai.TTS (Ortex/ONNX, VITS)
-        |
-        v
-     audio/wav bytes (X-TTS-Duration-Ms, X-TTS-Model)
-        |
-        v
-     AudioContext.decodeAudioData -> AudioBufferSourceNode -> speaker
+  |
+  | POST /api/conversations/audio {text, language}   (audio mode, default)
+  |  or POST /api/transcriptions {text, language}    (text mode)
+  v
 ```
 
-Audio capture never leaves the browser. For TTS, only the assistant's **text**
-is sent to the server (by the `server` engine); the synthesized audio returns
-and is played locally. The Phoenix backend serves:
+### 1.1 Audio mode (T0014/T0015) — one server round trip
+
+```text
+voice_assistant.js  -- POST /api/conversations/audio {text, language} (+ soundai_conversation cookie)
+      |
+      v
+SoundaiWeb.ConversationAudioController
+      | Soundai.Conversation.submit_transcript(text, conversation_id)   (LLM)
+      | Soundai.TTS.synthesize(response_text, language)                 (Ortex/VITS)
+      v
+200 audio/wav  + X-Conversation-Id, X-TTS-Duration-Ms, X-TTS-Model
+      |           + Set-Cookie: soundai_conversation=<id>
+      v
+ServerTTSEngine.playWav -> AudioContext.decodeAudioData -> speaker
+```
+
+### 1.2 Text mode (T0013/T0015)
+
+```text
+voice_assistant.js  -- POST /api/transcriptions {text, language} (+ cookie)
+      |
+      v
+SoundaiWeb.TranscriptionController -> Soundai.Conversation.submit_transcript(text, id)
+      |
+      v
+{"ok": true, "response": <LLM text>, "conversation_id": "...", "language": "..."}
+      |
+      v
+Browser tts_engine.js -> selected engine -> speaker
+      |-- native (speechSynthesis) / local Transformers.js VITS worker
+```
+
+### 1.3 The LLM layer (T0012/T0013)
+
+`Soundai.Conversation.submit_transcript/2` is the single conversation seam. It
+validates the input, loads/creates the per-conversation `ReqLLM.Context` in the
+in-memory `Soundai.Conversation.Store` (idle TTL, default 30 min), relays the
+text through an injectable adapter (default `Soundai.Conversation.LLM` →
+`BranchedLLM.Chat.send_message/3` with `timeout: llm_timeout_ms`, default 30 s),
+persists the updated context, and returns `{:ok, text, conversation_id}` or
+`{:error, reason}` — never raising. Replies are capped at
+`max_response_chars` (500 + "…"). The Spanish voice-assistant system prompt,
+timeout, cap and TTL are configurable under `config :soundai,
+Soundai.Conversation`. Tests inject `Soundai.Conversation.LLM.FakeAdapter`
+(same pattern as `Soundai.TTS`).
+
+`branched_llm` is a git dependency (`dvadell/branched_llm`, tag `v0.3.1`, pinned
+in `mix.lock`; its own prep work lives in `branched_llm/sdlc/tickets/` BL-01…03).
+NVIDIA OpenAI-compatible config lives in `config :branched_llm` (provider
+`:openai` with the NVIDIA `base_url` and `{:system, "NVIDIA_API_KEY"}`); the
+default model is `openai:openai/gpt-oss-20b`, overridable via `LLM_MODEL` /
+`LLM_BASE_URL` (see `config/runtime.exs`). Per-call timeout handling comes from
+BL-03 and surfaces as `:llm_timeout`.
+
+Audio capture never leaves the browser; only the transcribed **text** is sent to
+the server. The Phoenix backend serves:
 
 - HTML shells for `/` and `/settings`
 - the built JS/CSS bundles
 - `service_worker.js` (offline caching)
 
-The backend also accepts two JSON calls:
+Error vocabulary: `:empty` / `:too_long` / `:invalid` → 422, `:llm_unavailable`
+→ 502, `:llm_timeout` → 504, TTS `:not_ready` → 503 (audio mode). See §3.1.
 
-```text
-transcribed text
-  |
-  | POST /api/transcriptions  (fetch, JSON, same origin)
-  v
-SoundaiWeb.TranscriptionController -> Soundai.Conversation.submit_transcript/1
-  |
-  v
-{"ok": true, "response": "Buenos días", "language": "spanish"}
-  |
-  v
-Browser tts_engine.js -> selected engine -> speaker
-  |
-  |-- native / local (speechSynthesis / VITS worker): stays in the browser
-  `-- server engine: POST /api/tts -> SoundaiWeb.TTSController -> speaker
-```
-
-`submit_transcript/1` validates the transcript and returns the trimmed text as
-a `response` field in the JSON envelope. Today it echoes the transcript back;
-the follow-up LLM relay (through Needle) replaces the echo with the LLM's
-answer inside this same function. The client speaks the server's `response`
-text aloud through the pluggable TTS engine (`tts_engine.js`), which can route
-to the native Web Speech API, a local Transformers.js VITS worker, or the
-in-process Elixir server engine (see §6 for how the selection is made).
-
-Server-side TTS (`POST /api/tts`) is an **optional, in-process** feature: when a
-model file is present it is synthesized inside `soundai` with Ortex; when it is
-absent the endpoint reports `503` and the browser falls back to the native
-engine. There is no standalone TTS service.
+Server-side TTS (`/api/tts` and the audio-mode reply) is an **optional,
+in-process** feature: when a model file is present it is synthesized inside
+`soundai` with Ortex; when it is absent those endpoints report `503` (the audio
+endpoint also returns the LLM text so the client can fall back to text mode).
+There is no standalone TTS service.
 
 ## 2. Repository layout
 
@@ -478,6 +491,26 @@ mix precommit
 - `Soundai.TTS` is a thin seam with an injectable `:adapter` (tests use
   `TTSFakeAdapter`); keep synthesis behind it, never call `OrtexServer` from a
   controller directly.
+- **Cookies / `fetch_cookies`**: the `:api` pipeline must include
+  `plug :fetch_cookies` — both `TranscriptionController` and
+  `ConversationAudioController` read `conn.cookies["soundai_conversation"]`.
+  Body `conversation_id` takes precedence over the cookie; `reset: true`
+  deletes the stored context and returns a fresh id.
+- **LLM timeout budget**: every LLM call is bounded by `llm_timeout_ms`
+  (default 30 s, `config :soundai, Soundai.Conversation`); a hang surfaces as
+  `{:error, :llm_timeout}` → 504. The client adds its own 15 s fetch timeout
+  and a speaking watchdog (T0011/T0015) so no wait is unbounded.
+- **The `server` TTS engine now means the audio reply**: selecting "Servidor
+  (respuesta de voz)" in `/settings` makes `voice_assistant.js` POST the
+  transcript to `/api/conversations/audio` (LLM + server TTS in one call) and
+  play the returned WAV — it does **not** call `ServerTTSEngine.speak/4`
+  (legacy `/api/tts` path, kept only for interface compatibility). A 503 from
+  the audio endpoint falls back to text mode for that utterance.
+- **The LLM seam must never raise**: `Soundai.Conversation.submit_transcript/2`
+  maps every expected failure to a stable reason (`:empty`, `:too_long`,
+  `:invalid`, `:llm_unavailable`, `:llm_timeout`); controllers turn those into
+  422/502/504 JSON. The client renders short Spanish quiet notes, never the
+  error state.
 
 ## 13. TTS benchmarks (T0008)
 

@@ -698,7 +698,11 @@ Prefer WebGPU but never require it.
 
 ### Phoenix + Needle
 
-Keep Phoenix as the application backend and Needle as the AI orchestration/retrieval layer.
+Keep Phoenix as the application backend. The AI orchestration layer previously
+sketched as "Needle" is now **`branched_llm`** (a wrapper around ReqLLM),
+accessed through an OpenAI-compatible interface (NVIDIA endpoint, default model
+`openai:openai/gpt-oss-20b`, T0012). The OpenAI-compatible commitment in §6.4
+stands.
 
 ### Voice-first UI
 
@@ -730,7 +734,7 @@ Measure:
 Measure:
 
 - microphone → transcription;
-- transcription → LLM response;
+- transcription → LLM response (bounded by the 30 s LLM timeout — count 504s);
 - LLM → TTS;
 - total response latency.
 
@@ -751,7 +755,8 @@ Measure:
 - successful voice turns;
 - microphone failures;
 - STT failures;
-- LLM failures;
+- LLM failures (broken down by reason: `:llm_unavailable` → 502,
+  `:llm_timeout` → 504);
 - TTS failures.
 
 ## 22. Open Questions
@@ -766,12 +771,27 @@ These should be resolved through implementation and measurement rather than prem
 4. Should TTS run locally or on the backend? — **resolved**: server-side
    in-process Elixir (ONNX/Ortex) by default, with browser-side engines
    (native + local VITS) as fallbacks (T0009/T0010).
-5. How should conversation history be persisted?
-6. How should users interrupt an assistant response?
+5. How should conversation history be persisted? — **resolved for the epic**:
+   active-session only, in-memory per `conversation_id` with an idle TTL
+   (`Soundai.Conversation.Store`, T0013); the `soundai_conversation` cookie
+   carries the id; "Nueva conversación" / `reset: true` start fresh (T0016).
+   Persistent history remains future work.
+6. How should users interrupt an assistant response? — **resolved for the epic**:
+   a new press cancels playback and starts recording; the speaking watchdog
+   bounds hangs (T0011/T0015).
 7. Should voice activity detection replace explicit recording controls?
-8. How much of the system should eventually work offline?
+8. How much of the system should eventually work offline? — **resolved for the
+   epic**: STT is fully offline; the LLM round trip (text and audio reply modes)
+   is online-only and fails quietly offline (T0013–T0016).
 9. What browser/device baseline should officially be supported?
-10. What is the appropriate long-term authentication model?
+10. What is the appropriate long-term authentication model? — **out of scope**
+    for this epic; PRD §14 (rate limiting/auth) remains before public deployment.
+11. Which LLM model/provider should be used? — **resolved**: NVIDIA
+    OpenAI-compatible endpoint with `openai:openai/gpt-oss-20b` as the default
+    model, reached through `branched_llm` (a wrapper around ReqLLM) — see
+    `config/config.exs` + `config/runtime.exs` (T0012). The orchestration layer
+    previously sketched as "Needle" is now `branched_llm`; the OpenAI-compatible
+    commitment in §6.4 is kept.
 
 ## 23. Product Definition
 
