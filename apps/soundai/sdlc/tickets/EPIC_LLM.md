@@ -66,3 +66,24 @@ Manual browser check per convention (client flow verified in browser console):
 press → speak → hear an LLM answer, with the selected reply mode (server =
 audio, native/local = text) and a follow-up question ("¿Y el sábado?") resolved
 in context. See each ticket for its own acceptance criteria.
+
+## Status: complete
+
+All tickets (T0012 … T0017) are implemented, tested, and pushed to `main`
+(`5e71619`); their docs live in `sdlc/tickets/done/`. Automated checks pass at
+the umbrella root: `mix format --check-formatted`, `mix compile
+--warnings-as-errors`, `mix credo --strict`, `mix dialyzer`, `mix test`
+(87 soundai + 19 soundpanel), `mix assets.build`.
+
+Remaining before this can be called fully verified:
+
+- [ ] Real-LLM smoke: the auto suite uses a fake adapter; run
+      `env -u LLM_MODEL mix run -e '...'` or the server with a live
+      `NVIDIA_API_KEY` to confirm a live round trip. **Note:** the developer
+      shell still exports `LLM_MODEL=openai:z-ai/glm-5.1`, which is
+      decommissioned on NVIDIA (HTTP 410) — unset it so the working default
+      `openai:openai/gpt-oss-20b` is used.
+- [ ] Manual browser check (per convention): press → speak → hear an LLM answer
+      in the selected reply mode (server = audio, native/local = text), then a
+      follow-up question resolved in context.
+- [ ] `mix precommit` (umbrella root) for the record.
