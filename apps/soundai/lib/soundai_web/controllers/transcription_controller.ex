@@ -5,19 +5,45 @@
 defmodule SoundaiWeb.TranscriptionController do
   use SoundaiWeb, :controller
 
+  @cookie_name "soundai_conversation"
+  @cookie_max_age 60 * 60 * 24 * 7
+
   @doc """
   Receives a transcript produced by the browser-side Whisper STT.
 
   Only the text travels over the network; raw microphone audio never leaves the
-  browser. The response is a minimal JSON envelope (`{"ok": true}`) that a
-  follow-up ticket extends with the LLM reply.
+  browser. The transcript is relayed to the LLM via `Soundai.Conversation`, and
+  the reply is returned with a `conversation_id` (also set as a cookie) so the
+  next turn can keep context.
   """
   def create(conn, %{"text" => text} = params) do
-    case Soundai.Conversation.submit_transcript(text) do
-      {:ok, response} ->
+    conversation_id = Map.get(params, "conversation_id") || conn.cookies[@cookie_name]
+
+    case Soundai.Conversation.submit_transcript(text, conversation_id) do
+      {:ok, response, id} ->
         conn
+        |> put_resp_cookie(@cookie_name, id,
+          max_age: @cookie_max_age,
+          path: "/",
+          same_site: "Lax"
+        )
         |> put_status(:created)
-        |> json(%{ok: true, response: response, language: Map.get(params, "language")})
+        |> json(%{
+          ok: true,
+          response: response,
+          conversation_id: id,
+          language: Map.get(params, "language")
+        })
+
+      {:error, :llm_unavailable} ->
+        conn
+        |> put_status(:bad_gateway)
+        |> json(%{errors: %{text: "LLM is unavailable"}})
+
+      {:error, :llm_timeout} ->
+        conn
+        |> put_status(:gateway_timeout)
+        |> json(%{errors: %{text: "LLM timed out"}})
 
       {:error, reason} ->
         conn

@@ -12,6 +12,7 @@ defmodule SoundaiWeb.Router do
 
   pipeline :api do
     plug :accepts, ["json"]
+    plug :fetch_cookies
   end
 
   scope "/", SoundaiWeb do

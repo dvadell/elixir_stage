@@ -9,6 +9,7 @@ defmodule Soundai.Application do
       SoundaiWeb.Telemetry,
       {DNSCluster, query: Application.get_env(:soundai, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Soundai.PubSub},
+      Soundai.Conversation.Store,
       # Start a worker by calling: Soundai.Worker.start_link(arg)
       # {Soundai.Worker, arg},
       # Start to serve requests, typically the last entry
