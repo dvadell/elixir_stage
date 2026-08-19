@@ -30,6 +30,21 @@ if model_path = System.get_env("SOUNDAI_TTS_MODEL_PATH") do
   config :soundai, Soundai.TTS, model_path: model_path
 end
 
+# LLM overrides (branched_llm). Values default to config/config.exs:
+# NVIDIA endpoint + NVIDIA_API_KEY via the :openai provider, model
+# openai:openai/gpt-oss-20b.
+if llm_model = System.get_env("LLM_MODEL") do
+  config :branched_llm, ai_model: llm_model
+end
+
+if llm_base_url = System.get_env("LLM_BASE_URL") do
+  config :branched_llm, base_url: llm_base_url
+end
+
+if api_key = System.get_env("NVIDIA_API_KEY") do
+  config :branched_llm, :providers, openai: [api_key: api_key]
+end
+
 if config_env() == :dev do
   # Reload browser tabs when matching files change.
   config :soundai, SoundaiWeb.Endpoint,

@@ -33,6 +33,22 @@ config :soundai, Soundai.TTS,
   model_path: "tts/model.onnx",
   max_text_length: 1000
 
+# LLM conversation manager (branched_llm). req_llm has no :nvidia provider, so
+# the NVIDIA OpenAI-compatible endpoint is reached through the :openai provider
+# with a custom base_url; the API key is read from NVIDIA_API_KEY at runtime.
+# Overrides: LLM_MODEL, LLM_BASE_URL, NVIDIA_API_KEY in runtime.exs.
+config :branched_llm,
+  ai_model: System.get_env("LLM_MODEL") || "openai:openai/gpt-oss-20b",
+  default_provider: :openai,
+  base_url: System.get_env("LLM_BASE_URL") || "https://integrate.api.nvidia.com/v1",
+  max_tokens: 128_000
+
+config :branched_llm, :providers,
+  openai: [
+    base_url: "https://integrate.api.nvidia.com/v1",
+    api_key: {:system, "NVIDIA_API_KEY"}
+  ]
+
 # Configure the endpoint
 config :soundai, SoundaiWeb.Endpoint,
   url: [host: "localhost"],

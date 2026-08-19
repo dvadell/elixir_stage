@@ -8,7 +8,8 @@ defmodule ElixirStage.MixProject do
       start_permanent: Mix.env() == :prod,
       listeners: [Phoenix.CodeReloader],
       releases: releases(),
-      deps: deps()
+      deps: deps(),
+      dialyzer: [plt_add_apps: [:mix, :ex_unit]]
     ]
   end
 

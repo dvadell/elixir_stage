@@ -71,6 +71,7 @@ defmodule Soundai.MixProject do
        depth: 1},
       {:swoosh, "~> 1.16"},
       {:req, "~> 0.5"},
+      {:branched_llm, github: "dvadell/branched_llm", tag: "v0.3.1"},
       {:ortex, "~> 0.1.10"},
       {:nx, "~> 0.6"},
       {:telemetry_metrics, "~> 1.0"},
