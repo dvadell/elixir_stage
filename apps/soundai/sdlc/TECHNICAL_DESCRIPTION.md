@@ -170,8 +170,8 @@ apps/soundai/
 │   │   └── assets/                 built bundles (gitignored, generated)
 │   └── tts/                        server TTS model (gitignored): model.onnx,
 │                                   tokenizer.json, config.json
-├── sdlc/tickets/                   active tickets (T0017.md)
-│   └── done/                       implemented tickets T0002.md–T0016.md
+├── sdlc/tickets/                   active epic (EPIC_LLM.md, next tickets)
+│   └── done/                       implemented tickets T0002.md–T0017.md
 └── test/
     ├── soundai/                    unit tests (conversation, tts, vits_tokenizer, wav)
     ├── soundai_web/controllers/    controller tests (home, settings, transcriptions,

@@ -134,5 +134,5 @@ mix precommit                  # compile --warnings-as-errors, format, credo, di
 
 - `sdlc/PRD.md` — product requirements
 - `sdlc/TECHNICAL_DESCRIPTION.md` — architecture, conventions, gotchas
-- `sdlc/tickets/` — active tickets (T0017.md)
-- `sdlc/tickets/done/` — implemented tickets T0002.md … T0016.md
+- `sdlc/tickets/` — active epic (EPIC_LLM.md, next tickets)
+- `sdlc/tickets/done/` — implemented tickets T0002.md … T0017.md
