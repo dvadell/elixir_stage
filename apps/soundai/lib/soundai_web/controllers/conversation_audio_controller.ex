@@ -1,0 +1,103 @@
+# The audio conversation endpoint is intentionally public (there is no
+# authentication in the app yet), so skip the missing-authentication heuristic.
+# Rate limiting must be introduced before any public deployment.
+# credo:disable-for-this-file OeditusCredo.Check.Security.MissingAuthentication
+defmodule SoundaiWeb.ConversationAudioController do
+  use SoundaiWeb, :controller
+
+  @cookie_name "soundai_conversation"
+  @cookie_max_age 60 * 60 * 24 * 7
+  @default_language "spanish"
+
+  @doc """
+  Runs the full voice round trip: the LLM (via `Soundai.Conversation`, the same
+  seam as `POST /api/transcriptions`) answers the transcript, and the in-process
+  TTS synthesizes that answer into a WAV played by the browser.
+
+  The client sends JSON (`{"text": "...", "language": "spanish"}`) and receives
+  `audio/wav` bytes with `X-Conversation-Id`, `X-TTS-Duration-Ms` and
+  `X-TTS-Model` headers, plus `Set-Cookie: soundai_conversation` so the next turn
+  keeps context.
+
+  Failure is graceful and never a 500 for expected cases: LLM failures map to
+  502/504, an absent TTS model to 503, and validation to 422. When the LLM
+  succeeded but TTS did not, the error body carries the LLM `response` text so
+  the client can fall back to speaking it with the native engine.
+  """
+  def create(conn, %{"text" => text} = params) do
+    conversation_id = Map.get(params, "conversation_id") || conn.cookies[@cookie_name]
+    language = Map.get(params, "language", @default_language)
+
+    case Soundai.Conversation.submit_transcript(text, conversation_id) do
+      {:ok, response, id} ->
+        synthesize(conn, response, id, language)
+
+      {:error, :llm_unavailable} ->
+        render_llm_error(conn, :bad_gateway, "LLM is unavailable")
+
+      {:error, :llm_timeout} ->
+        render_llm_error(conn, :gateway_timeout, "LLM timed out")
+
+      {:error, reason} ->
+        render_validation_error(conn, reason)
+    end
+  end
+
+  def create(conn, _params) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{errors: %{text: "is required"}})
+  end
+
+  defp synthesize(conn, response, id, language) do
+    # The conversation already advanced on the server (context persisted), so the
+    # id is offered back via cookie and body on every TTS outcome.
+    conn =
+      put_resp_cookie(conn, @cookie_name, id,
+        max_age: @cookie_max_age,
+        path: "/",
+        same_site: "Lax"
+      )
+
+    case Soundai.TTS.synthesize(response, language) do
+      {:ok, %{audio: audio, content_type: content_type, duration_ms: duration_ms}} ->
+        conn
+        |> put_resp_header("content-type", content_type)
+        |> put_resp_header("x-conversation-id", id)
+        |> put_resp_header("x-tts-duration-ms", "#{duration_ms}")
+        |> put_resp_header("x-tts-model", "Xenova/mms-tts-spa")
+        |> send_resp(200, audio)
+
+      {:error, :not_ready} ->
+        render_tts_error(conn, :service_unavailable, "server TTS is not ready", response, id)
+
+      {:error, reason} when reason in [:empty, :too_long, :invalid] ->
+        render_tts_error(conn, :unprocessable_entity, text_error(reason), response, id)
+
+      {:error, _reason} ->
+        render_tts_error(conn, :internal_server_error, "synthesis failed", response, id)
+    end
+  end
+
+  defp render_llm_error(conn, status, message) do
+    conn
+    |> put_status(status)
+    |> json(%{errors: %{text: message}})
+  end
+
+  defp render_validation_error(conn, reason) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{errors: %{text: text_error(reason)}})
+  end
+
+  defp render_tts_error(conn, status, message, response, id) do
+    conn
+    |> put_status(status)
+    |> json(%{errors: %{text: message}, response: response, conversation_id: id})
+  end
+
+  defp text_error(:empty), do: "can't be blank"
+  defp text_error(:too_long), do: "is too long"
+  defp text_error(:invalid), do: "is invalid"
+end

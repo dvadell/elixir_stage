@@ -30,5 +30,6 @@ defmodule SoundaiWeb.Router do
 
     post "/transcriptions", TranscriptionController, :create
     post "/tts", TTSController, :create
+    post "/conversations/audio", ConversationAudioController, :create
   end
 end
