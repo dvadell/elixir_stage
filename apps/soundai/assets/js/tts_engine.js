@@ -257,8 +257,14 @@ class TransformersTTSEngine {
 }
 
 // ---------------------------------------------------------------------------
-// Server TTS engine (Elixir /api/tts endpoint)
+// Server TTS engine (Elixir /api/conversations/audio endpoint)
 // ---------------------------------------------------------------------------
+//
+// With T0015 the "server" engine is the *audio mode*: the whole conversation
+// reply (LLM + server TTS) is produced in one POST to /api/conversations/audio,
+// and the returned WAV is played back through `playWav/2`. `speak/4` (which
+// synthesized arbitrary text via the legacy /api/tts endpoint) is kept only to
+// preserve the engine interface for the settings picker and existing fallbacks.
 
 class ServerTTSEngine {
   constructor() {
@@ -280,13 +286,13 @@ class ServerTTSEngine {
   // proves the route exists. Only a network-level failure is unreachable.
   async _checkEndpoint() {
     try {
-      await fetch("/api/tts", {
+      await fetch("/api/conversations/audio", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: "" }),
       });
       this._ready = true;
-      console.log("[soundai] Server TTS engine ready (/api/tts reachable)");
+      console.log("[soundai] Server TTS engine ready (/api/conversations/audio reachable)");
     } catch (err) {
       this._ready = false;
       throw new Error(`Server TTS endpoint unreachable: ${err?.message || err}`);
@@ -297,6 +303,8 @@ class ServerTTSEngine {
     return this._ready;
   }
 
+  // Legacy: synthesize arbitrary text server-side via /api/tts. No longer used
+  // by voice_assistant.js in audio mode, kept for interface compatibility.
   speak(text, language, options = {}) {
     const { onend, onerror } = options;
 
@@ -329,6 +337,14 @@ class ServerTTSEngine {
         if (err?.name === "AbortError") return;
         if (onerror) onerror(err);
       });
+  }
+
+  // Plays a WAV returned by /api/conversations/audio. The primary playback
+  // path for audio mode; also honours cancel() via _stopPlayback.
+  playWav(arrayBuffer, options = {}) {
+    const { onend, onerror } = options;
+    this._stopPlayback();
+    this._playAudio(arrayBuffer, onend, onerror);
   }
 
   async _playAudio(arrayBuffer, onend, onerror) {
@@ -420,8 +436,9 @@ const _engines = {
 /**
  * Create a TTS engine instance by id.
  *
- * Known ids: "native" (speechSynthesis), "server" (/api/tts), plus one per
- * local Transformers.js model in TTS_CONFIG.
+ * Known ids: "native" (speechSynthesis), "server" (server audio replies via
+ * /api/conversations/audio), plus one per local Transformers.js model in
+ * TTS_CONFIG.
  * Unknown ids fall back to the native engine with a console warning.
  */
 export function createTTSEngine(engineId) {

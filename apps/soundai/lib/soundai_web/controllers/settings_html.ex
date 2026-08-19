@@ -42,9 +42,9 @@ defmodule SoundaiWeb.SettingsHTML do
     },
     {
       "server",
-      gettext("Servidor (Elixir + ONNX)"),
+      gettext("Servidor (respuesta de voz)"),
       gettext(
-        "Synthesized by the server via the /api/tts endpoint (VITS/ONNX). Nothing to download; requires the model to be installed on the server and a working network connection."
+        "El servidor responde por voz: el LLM y la síntesis ocurren en una sola llamada (respuesta de audio). Nada que descargar; requiere conexión y modelo de TTS instalado en el servidor."
       )
     },
     {

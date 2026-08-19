@@ -26,6 +26,16 @@ const RECORD_BUTTON_BASE =
 const RECORD_BUTTON_LISTENING = "bg-primary text-primary-content";
 const RECORD_BUTTON_IDLE = "bg-base-100 text-base-content";
 
+// T0011/T0015 bounds: every async wait in the send -> speaking -> result chain
+// is capped so the assistant can never stall indefinitely. The send timeout
+// covers a hung fetch; the speaking watchdog covers an `onend` that never
+// fires (the observed mobile hang / repeated-last-word symptom).
+const SEND_TIMEOUT_MS = 15_000;
+const SPEAK_MIN_MS = 5_000;
+const SPEAK_MS_PER_CHAR = 150;
+const SPEAK_MAX_MS = 30_000;
+const SPEAK_AUDIO_BUFFER_MS = 2_000;
+
 export function mountVoiceAssistant() {
   const el = document.getElementById("voice-assistant");
   if (!el || el.dataset.vaMounted) return;
@@ -58,6 +68,7 @@ class VoiceAssistantController {
     this.error = null;
     this.progress = null;
     this.sendNote = null;
+    this._speakWatchdog = null;
     this.config = this.resolveConfig();
     this.ttsEngine = createTTSEngine(this.config.tts);
 
@@ -100,6 +111,7 @@ class VoiceAssistantController {
     this.el.removeEventListener("pointerup", this.onPointerUp);
     this.el.removeEventListener("pointercancel", this.onPointerUp);
     this.teardownAudio();
+    this._stopSpeakWatchdog();
     this.ttsEngine?.cancel();
     if (this.worker) {
       this.worker.terminate();
@@ -452,35 +464,49 @@ class VoiceAssistantController {
   // over the network; raw microphone audio never leaves the browser. The UI
   // must never depend on this: the transcript stays visible and the send fails
   // quietly (or is skipped entirely) when offline.
+  //
+  // Mode dispatch (T0015):
+  //   * "server" TTS engine  -> audio mode: one POST to /api/conversations/audio
+  //     returns a WAV (LLM + server TTS in one round trip) that we play. A 503
+  //     (server TTS model absent) falls back to text mode for this utterance.
+  //   * native / local engine -> text mode: POST /api/transcriptions and speak
+  //     the returned text with that engine.
   async sendTranscript(text) {
-    const payload = { text, language: this.config.language };
+    if (!navigator.onLine) {
+      this.sendNote = "Offline — transcript kept locally.";
+      if (this.state === "sending") this.setState("result");
+      return;
+    }
+
+    if (this.config.tts === "server") {
+      await this.sendAudioMode(text);
+    } else {
+      await this.sendTextMode(text);
+    }
+  }
+
+  async sendTextMode(text) {
     let ok = false;
     let responseData = null;
 
-    if (navigator.onLine) {
-      try {
-        const response = await fetch("/api/transcriptions", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        if (response.ok) {
-          responseData = await response.json();
-          ok = true;
-        }
-      } catch (_err) {
-        ok = false;
+    try {
+      const response = await this.fetchWithTimeout("/api/transcriptions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, language: this.config.language }),
+      });
+      if (response.ok) {
+        responseData = await response.json();
+        ok = true;
       }
+    } catch (_err) {
+      ok = false;
     }
 
-    this.sendNote = ok
-      ? null
-      : navigator.onLine
-        ? "Couldn't reach the server — transcript kept locally."
-        : "Offline — transcript kept locally.";
+    this.sendNote = ok ? null : "Couldn't reach the server — transcript kept locally.";
 
     if (ok && responseData && typeof responseData.response === "string" && responseData.response.trim() !== "") {
-      this.speakResponse(responseData.response);
+      this.speakText(responseData.response);
     } else if (this.state === "sending") {
       if (ok) {
         // A successful send with no speakable response (e.g. empty text): keep
@@ -493,10 +519,99 @@ class VoiceAssistantController {
     }
   }
 
-  // Speak the server-returned text through the pluggable TTS engine.
-  // Falls back to native engine on local engine failure, then to a quiet
-  // note if both fail. Never enters the error state (PRD §13).
-  speakResponse(responseText) {
+  async sendAudioMode(text) {
+    let response;
+    try {
+      response = await this.fetchWithTimeout("/api/conversations/audio", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, language: this.config.language }),
+      });
+    } catch (_err) {
+      this.sendNote = "Couldn't reach the server — transcript kept locally.";
+      if (this.state === "sending") this.setState("result");
+      return;
+    }
+
+    if (response.status === 200) {
+      const audio = await response.arrayBuffer();
+      if (this.state !== "sending") return;
+      const durationMs = parseInt(response.headers.get("x-tts-duration-ms") || "0", 10);
+      this.sendNote = null;
+      this.playServerAudio(audio, durationMs);
+      return;
+    }
+
+    if (response.status === 503) {
+      // Server TTS model absent: automatic one-time fallback to text mode with
+      // a quiet note; never the error state.
+      this.log("server audio unavailable (503); falling back to text mode");
+      this.sendNote = "El servidor no pudo generar audio — respuesta en texto.";
+      await this.fallbackToTextMode(text);
+      return;
+    }
+
+    // 422/502/504 or any other status: quiet note, transcript stays.
+    this.sendNote = "Couldn't reach the server — transcript kept locally.";
+    if (this.state === "sending") this.setState("result");
+  }
+
+  // Text-mode fallback used when the audio endpoint reports the server TTS
+  // model is absent: relay to /api/transcriptions and speak the reply with the
+  // native engine (the server engine cannot synthesize locally).
+  async fallbackToTextMode(text) {
+    try {
+      const response = await this.fetchWithTimeout("/api/transcriptions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, language: this.config.language }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (typeof data?.response === "string" && data.response.trim() !== "") {
+          this.speakWithNative(data.response);
+          return;
+        }
+      }
+    } catch (_err) {
+      // Quiet note already set; fall through to the result state below.
+    }
+    if (this.state === "sending") this.setState("result");
+  }
+
+  // Plays the server-synthesized WAV returned by /api/conversations/audio
+  // through the server TTS engine's playback path, under the speaking watchdog.
+  playServerAudio(arrayBuffer, durationMs = 0) {
+    if (this.state !== "sending") return;
+    if (typeof this.ttsEngine?.playWav !== "function") {
+      // The server engine was replaced (e.g. preload fell back to native); the
+      // WAV has no playback path — quiet note, never the error state.
+      this.sendNote = "Speech playback is not available.";
+      this.setState("result");
+      return;
+    }
+    this.setState("speaking");
+    this._startSpeakWatchdog(null, durationMs);
+
+    this.ttsEngine.playWav(arrayBuffer, {
+      onend: () => {
+        this._stopSpeakWatchdog();
+        if (this.state === "speaking") this.setState("result");
+      },
+      onerror: () => {
+        this._stopSpeakWatchdog();
+        if (this.state === "speaking") {
+          this.sendNote = "Speech playback failed.";
+          this.setState("result");
+        }
+      },
+    });
+  }
+
+  // Speak the server-returned text through the pluggable TTS engine (native or
+  // local). Falls back to native engine on local engine failure, then to a
+  // quiet note if both fail. Never enters the error state (PRD §13).
+  speakText(responseText) {
     // A new recording may have started while the fetch was in flight; never
     // speak a stale response over it or clobber the "listening" state.
     if (this.state !== "sending") return;
@@ -516,53 +631,98 @@ class VoiceAssistantController {
       }
     }
 
+    this._speakVia(this.ttsEngine, responseText, (err) => {
+      if (this.config.tts === "native") return false;
+      // Try native fallback on synthesis failure.
+      console.warn("[soundai] TTS synthesis failed, falling back to native:", err);
+      this.ttsEngine = createTTSEngine("native");
+      this.ttsEngine.init();
+      return this.ttsEngine.isReady();
+    });
+  }
+
+  // Speaks text with an explicit native engine (used by the audio-mode 503
+  // fallback, where this.ttsEngine is the server engine and cannot synthesize).
+  speakWithNative(responseText) {
+    if (this.state !== "sending") return;
+    const native = createTTSEngine("native");
+    native.init();
+
+    if (!native.isReady()) {
+      this.sendNote = "Speech synthesis is not available.";
+      this.setState("result");
+      return;
+    }
+
+    this._speakVia(native, responseText, () => false);
+  }
+
+  // Shared speaking path: drives the state machine, arms the watchdog, and
+  // routes onend/onerror. `fallback` is called with the error on synthesis
+  // failure; if it returns true the fallback engine's speech is started.
+  // Callers must verify the state before speaking; the recursive fallback
+  // branch legitimately runs while still in "speaking".
+  _speakVia(engine, text, fallback) {
     this.setState("speaking");
+    this._startSpeakWatchdog(text);
 
-    this.ttsEngine.speak(
-      responseText,
-      this.config.language,
-      {
-        onend: () => {
-          if (this.state === "speaking") {
-            this.setState("result");
-          }
-        },
-        onerror: (err) => {
-          if (this.state === "speaking") {
-            // Try native fallback on synthesis failure.
-            if (this.config.tts !== "native") {
-              console.warn("[soundai] TTS synthesis failed, falling back to native:", err);
-              this.ttsEngine = createTTSEngine("native");
-              this.ttsEngine.init();
+    engine.speak(text, this.config.language, {
+      onend: () => {
+        this._stopSpeakWatchdog();
+        if (this.state === "speaking") this.setState("result");
+      },
+      onerror: (err) => {
+        if (this.state !== "speaking") return;
+        this._stopSpeakWatchdog();
 
-              if (this.ttsEngine.isReady()) {
-                this.ttsEngine.speak(
-                  responseText,
-                  this.config.language,
-                  {
-                    onend: () => {
-                      if (this.state === "speaking") {
-                        this.setState("result");
-                      }
-                    },
-                    onerror: () => {
-                      if (this.state === "speaking") {
-                        this.sendNote = "Speech playback failed.";
-                        this.setState("result");
-                      }
-                    },
-                  }
-                );
-                return;
-              }
-            }
+        if (fallback(err)) {
+          this._speakVia(this.ttsEngine, text, () => false);
+          return;
+        }
 
-            this.sendNote = "Speech playback failed.";
-            this.setState("result");
-          }
-        },
-      }
-    );
+        this.sendNote = "Speech playback failed.";
+        this.setState("result");
+      },
+    });
+  }
+
+  // ------------------------------------------------------ send/speak watchdog
+
+  // Bounds a fetch so the UI never sits in "sending" forever (T0011).
+  fetchWithTimeout(url, options = {}) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), SEND_TIMEOUT_MS);
+    return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(timer));
+  }
+
+  _startSpeakWatchdog(text, durationMs = 0) {
+    this._stopSpeakWatchdog();
+    let budget;
+    if (durationMs > 0) {
+      // Audio mode: the server reports the exact playback length; allow a
+      // small buffer so a legitimate long WAV is never cut short.
+      budget = durationMs + SPEAK_AUDIO_BUFFER_MS;
+    } else {
+      // Text mode (T0011): generous upper bound derived from the text length.
+      budget = Math.min(
+        SPEAK_MAX_MS,
+        Math.max(SPEAK_MIN_MS, (text?.length || 0) * SPEAK_MS_PER_CHAR)
+      );
+    }
+    this._speakWatchdog = setTimeout(() => {
+      if (this.state !== "speaking") return;
+      console.warn("[soundai] speaking timed out; forced result");
+      this.ttsEngine?.cancel();
+      this.sendNote = "Speech playback did not finish.";
+      this.setState("result");
+    }, budget);
+  }
+
+  _stopSpeakWatchdog() {
+    if (this._speakWatchdog) {
+      clearTimeout(this._speakWatchdog);
+      this._speakWatchdog = null;
+    }
   }
 
   // ----------------------------------------------------------- microphone
@@ -655,7 +815,10 @@ class VoiceAssistantController {
     if (event.target.closest("a")) return;
     if (this.recording || this.state === "transcribing") return;
 
-    // Stop any ongoing speech synthesis so the user can interrupt mid-speech
+    // Stop any ongoing speech synthesis so the user can interrupt mid-speech,
+    // and cancel the speaking watchdog so a stray timer cannot clobber the new
+    // "listening" state (T0011).
+    this._stopSpeakWatchdog();
     this.ttsEngine?.cancel();
 
     if (this.state === "loading" || (this.state === "error" && !this.ready)) {
