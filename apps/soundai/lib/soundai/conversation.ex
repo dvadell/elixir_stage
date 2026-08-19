@@ -21,6 +21,8 @@ defmodule Soundai.Conversation do
   Errors are never raised: LLM failures map to `:llm_unavailable` / `:llm_timeout`.
   """
 
+  require Logger
+
   alias Soundai.Conversation.{LLM, Store}
 
   @max_text_length 4000
@@ -59,6 +61,7 @@ defmodule Soundai.Conversation do
         {:ok, cap_response_length(response), id}
 
       {:error, reason} ->
+        Logger.warning("LLM call failed for conversation=#{id}: #{inspect(reason)}")
         {:error, map_llm_error(reason)}
     end
   end
