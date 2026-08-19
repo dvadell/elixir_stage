@@ -26,7 +26,14 @@ defmodule Soundai.Conversation do
   alias Soundai.Conversation.{LLM, Store}
 
   @max_text_length 4000
-  @default_system_prompt "Eres un asistente de voz amable y directo. Respondes en español, de forma breve y natural, como en una conversación hablada, sin listas ni encabezados."
+
+  @default_system_prompt """
+  Eres un asistente de voz amable y directo. Respondes en español, de forma breve y natural, como en una conversación hablada.
+
+  El texto que recibes proviene de un reconocimiento de voz que a veces comete errores: puede partir o unir palabras, y malinterpretar sonidos parecidos. Haz tu mejor esfuerzo por deducir la intención real del mensaje y responde a ella, sin pedir aclaraciones ni corregir al usuario.
+
+  Responde con frases cortas y sencillas, con palabras comunes y fáciles de pronunciar y de sintetizar por voz. No uses listas ni encabezados.
+  """
 
   @doc """
   Validates and relays a transcribed utterance to the LLM.

@@ -31,6 +31,29 @@ defmodule Soundai.ConversationTest do
       assert {:ok, _context} = Store.get(id)
     end
 
+    test "starts a conversation with the STT-aware default system prompt" do
+      {:ok, _, _id} = Conversation.submit_transcript("Hola")
+      assert_received {:fake_llm_called, %{messages: [system | _]}}
+
+      content = Enum.map_join(system.content, "\n", & &1.text)
+      assert system.role == :system
+      assert content =~ "reconocimiento de voz"
+      assert content =~ "partir o unir palabras"
+      assert content =~ "frases cortas y sencillas"
+    end
+
+    test "honors a configured :system_prompt override" do
+      Application.put_env(:soundai, Soundai.Conversation,
+        adapter: FakeAdapter,
+        fake_capture_pid: self(),
+        system_prompt: "Custom prompt"
+      )
+
+      {:ok, _, _id} = Conversation.submit_transcript("Hola")
+      assert_received {:fake_llm_called, %{messages: [system | _]}}
+      assert Enum.map_join(system.content, "\n", & &1.text) == "Custom prompt"
+    end
+
     test "a second turn with the same id sees the previous assistant turn" do
       {:ok, "Respuesta simulada", id} = Conversation.submit_transcript("Primera pregunta")
       assert_received {:fake_llm_called, %{messages: first_messages}}
