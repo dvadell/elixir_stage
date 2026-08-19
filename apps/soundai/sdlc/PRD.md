@@ -321,7 +321,12 @@ Errors should return the UI to a usable state.
                                      Audio
 ```
 
-The exact location of TTS is intentionally left open. It can be client-side or server-side depending on latency, quality, privacy, and operational considerations.
+The exact location of TTS was intentionally left open; it is now resolved:
+**server-side synthesis inside Elixir** (in-process ONNX/VITS via `Ortex`, no
+separate service) is the default, with browser-side engines (native
+`speechSynthesis` and a local Transformers.js VITS worker) available as
+fallbacks. The choice can still shift per latency, quality, privacy, and
+operational considerations.
 
 ## 10. Technology Choices
 
@@ -346,7 +351,9 @@ The exact location of TTS is intentionally left open. It can be client-side or s
 
 - Whisper for STT
 - OpenAI-compatible API for the LLM
-- TTS engine to be selected
+- TTS: server-side synthesis implemented in Elixir (ONNX Runtime via `Ortex`,
+  running the `Xenova/mms-tts-spa` VITS model in-process), with browser-side
+  engines (native `speechSynthesis`, local Transformers.js VITS) as fallbacks.
 
 The architecture should avoid hard-coding the product to one LLM or TTS provider.
 
@@ -752,9 +759,13 @@ Measure:
 These should be resolved through implementation and measurement rather than prematurely locking the architecture:
 
 1. Which Whisper model provides the best quality/latency/memory tradeoff?
-2. Should Whisper run in a Web Worker?
-3. Which TTS engine provides the best latency, quality, privacy, and cost?
-4. Should TTS run locally or on the backend?
+2. Should Whisper run in a Web Worker? — **yes** (T0002/T0003).
+3. Which TTS engine provides the best latency, quality, privacy, and cost? —
+   **resolved** to the `Xenova/mms-tts-spa` VITS model (T0008 benchmark);
+   Supertonic-TTS-2-ONNX was evaluated and removed.
+4. Should TTS run locally or on the backend? — **resolved**: server-side
+   in-process Elixir (ONNX/Ortex) by default, with browser-side engines
+   (native + local VITS) as fallbacks (T0009/T0010).
 5. How should conversation history be persisted?
 6. How should users interrupt an assistant response?
 7. Should voice activity detection replace explicit recording controls?

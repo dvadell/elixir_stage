@@ -3,11 +3,14 @@
 Voice-first speech-to-text web app: a single microphone button that transcribes
 Spanish speech locally in the browser using **Whisper** via **Transformers.js**
 (on WebGPU or WASM/CPU), shows the transcript on screen, and speaks the
-server's echo of it aloud via the native Web Speech API (`speechSynthesis`).
+server's echo of it aloud through a pluggable TTS engine: the native Web Speech
+API (`speechSynthesis`), a local Transformers.js VITS worker, or the
+**in-process Elixir TTS** (`POST /api/tts`), which runs the same VITS model with
+ONNX Runtime via `Ortex`.
 
 It is deliberately **offline-first and client-side**: there is **no Phoenix
 LiveView / websocket** at runtime. The server only renders static HTML shells
-and accepts a single JSON endpoint; every interaction (mic capture, model load,
+and accepts two JSON endpoints; every interaction (mic capture, model load,
 inference, UI state) happens in the browser. Once the page and the speech model
 are cached, STT keeps working with no network at all. The transcribed **text**
 is POSTed to the server as a best-effort call — STT never depends on it.
@@ -51,15 +54,28 @@ voice_assistant.js -> tts_engine.js (pluggable TTS engine registry)
   |  Float32Array audio @16 kHz
   |     v
   |  Web Audio API (AudioContext) -> speaker
+  `--> server engine (Elixir /api/tts)
+        |
+        | POST /api/tts {text, language} (JSON, same origin)
+        v
+     SoundaiWeb.TTSController -> Soundai.TTS (Ortex/ONNX, VITS)
+        |
+        v
+     audio/wav bytes (X-TTS-Duration-Ms, X-TTS-Model)
+        |
+        v
+     AudioContext.decodeAudioData -> AudioBufferSourceNode -> speaker
 ```
 
-Audio never leaves the browser. The Phoenix backend only serves:
+Audio capture never leaves the browser. For TTS, only the assistant's **text**
+is sent to the server (by the `server` engine); the synthesized audio returns
+and is played locally. The Phoenix backend serves:
 
 - HTML shells for `/` and `/settings`
 - the built JS/CSS bundles
 - `service_worker.js` (offline caching)
 
-The backend also accepts one JSON call:
+The backend also accepts two JSON calls:
 
 ```text
 transcribed text
@@ -72,14 +88,24 @@ SoundaiWeb.TranscriptionController -> Soundai.Conversation.submit_transcript/1
 {"ok": true, "response": "Buenos días", "language": "spanish"}
   |
   v
-Browser tts_engine.js -> speechSynthesis -> speaker
+Browser tts_engine.js -> selected engine -> speaker
+  |
+  |-- native / local (speechSynthesis / VITS worker): stays in the browser
+  `-- server engine: POST /api/tts -> SoundaiWeb.TTSController -> speaker
 ```
 
 `submit_transcript/1` validates the transcript and returns the trimmed text as
 a `response` field in the JSON envelope. Today it echoes the transcript back;
 the follow-up LLM relay (through Needle) replaces the echo with the LLM's
 answer inside this same function. The client speaks the server's `response`
-text aloud through the pluggable TTS engine (`tts_engine.js`), which currently routes to the native Web Speech API (`speechSynthesis`).
+text aloud through the pluggable TTS engine (`tts_engine.js`), which can route
+to the native Web Speech API, a local Transformers.js VITS worker, or the
+in-process Elixir server engine (see §6 for how the selection is made).
+
+Server-side TTS (`POST /api/tts`) is an **optional, in-process** feature: when a
+model file is present it is synthesized inside `soundai` with Ortex; when it is
+absent the endpoint reports `503` and the browser falls back to the native
+engine. There is no standalone TTS service.
 
 ## 2. Repository layout
 
@@ -91,7 +117,9 @@ apps/soundai/
 │   │   ├── app.js                  entry point, boots the client modules
 │   │   ├── voice_assistant.js      main-thread voice UI controller + state machine
 │   │   ├── settings.js             /settings STT + TTS picker controllers
-│   │   ├── tts_engine.js           pluggable TTS engine registry (native engine)
+│   │   ├── tts_config.js           local TTS model/defaults (single source)
+│   │   ├── tts_engine.js           pluggable TTS engine registry (native, server, local VITS)
+│   │   ├── tts_worker.js           Web Worker: Transformers.js VITS pipeline
 │   │   ├── whisper_config.js       model/language/dtype defaults (single source)
 │   │   └── whisper_worker.js       Web Worker: Transformers.js Whisper pipeline
 │   ├── package.json                only @huggingface/transformers
@@ -99,25 +127,37 @@ apps/soundai/
 ├── lib/soundai/
 │   ├── application.ex             OTP application / supervisor tree
 │   ├── conversation.ex            receives transcripts; seam for the future LLM relay
-│   └── mailer.ex
+│   ├── mailer.ex
+│   └── tts/
+│       ├── tts.ex                 server-side TTS seam: synthesize/2 (Ortex)
+│       ├── tts/ortex_server.ex    GenServer owning the ONNX session (serialized calls)
+│       ├── tts/vits_tokenizer.ex  char-level tokenizer mirroring HF VitsTokenizer
+│       └── tts/wav.ex             Float32 waveform -> 16 kHz PCM WAV encoder
 ├── lib/soundai_web/
-│   ├── router.ex                   get "/", get "/settings", post "/api/transcriptions"
+│   ├── router.ex                   get "/", get "/settings", post /api/transcriptions, /api/tts
 │   ├── endpoint.ex                 COOP/COEP headers, static serving, no /live socket
 │   ├── controllers/
 │   │   ├── home_controller.ex      renders the voice assistant shell
 │   │   ├── home_html/              home page templates (HTML module)
 │   │   ├── settings_controller.ex  renders the STT + TTS settings shell
 │   │   ├── settings_html/          settings templates
-│   │   └── transcription_controller.ex  POST /api/transcriptions JSON endpoint
+│   │   ├── transcription_controller.ex  POST /api/transcriptions JSON endpoint
+│   │   └── tts_controller.ex       POST /api/tts WAV endpoint
 │   └── components/
 │       ├── layouts.ex              app layout, flash_group, theme_toggle
 │       └── layouts/root.html.heex  <head>, offline banner, theme script
-├── priv/static/
-│   ├── service_worker.js           offline app-shell service worker
-│   └── assets/                     built bundles (gitignored, generated)
-├── sdlc/tickets/                   T0002.md–T0005.md (feature tickets)
-└── test/soundai_web/
-    └── controllers/                controller tests (home + settings)
+├── priv/
+│   ├── static/
+│   │   ├── service_worker.js       offline app-shell service worker
+│   │   └── assets/                 built bundles (gitignored, generated)
+│   └── tts/                        server TTS model (gitignored): model.onnx,
+│                                   tokenizer.json, config.json
+├── sdlc/tickets/                   active tickets (T0011.md)
+│   └── done/                       implemented tickets T0002.md–T0010.md
+└── test/
+    ├── soundai/                    TTS unit tests (tts, vits_tokenizer, wav)
+    ├── soundai_web/controllers/    controller tests (home, settings, transcriptions, tts)
+    └── support/tts_fake_adapter.ex test adapter injected into Soundai.TTS
 ```
 
 > Note: `apps/soundai/lib/soundai_web.ex` still defines `live_view`/`live_component`
@@ -135,6 +175,7 @@ apps/soundai/
 | `GET /`          | `HomeController.index`    | `home_html/index.html.heex` (full-screen voice assistant) |
 | `GET /settings`  | `SettingsController.index`| `settings_html/index.html.heex`            |
 | `POST /api/transcriptions` | `TranscriptionController.create` | JSON envelope `{"ok": true, "response": <text>, "language": ...}` (no template) |
+| `POST /api/tts`  | `TTSController.create`     | `audio/wav` bytes + `X-TTS-Duration-Ms` / `X-TTS-Model` headers (no template) |
 
 `service_worker.js` is a static file served from `priv/static/` (added to
 `SoundaiWeb.static_paths/0`). `Plug.Static` `only:` includes it.
@@ -186,11 +227,13 @@ States: `loading → idle → listening → transcribing → sending → speakin
   note and the UI never enters the error state. When `navigator.onLine` is
   false the POST is skipped entirely.
 - On a successful send, the server returns `{"ok": true, "response": "...", "language": "..."}`
-  echoing the transcript. The client speaks the `response` text aloud using the
-  native Web Speech API (`speechSynthesis`), entering the `speaking` state
-  ("Speaking…"). The `utterance.onend` event transitions back to `result`.
-- Starting a new recording (`pointerdown`) calls `speechSynthesis.cancel()` so
-  the user can interrupt the assistant mid-speech.
+  echoing the transcript. The client speaks the `response` text aloud through
+  the configured TTS engine (`tts_engine.js` — native `speechSynthesis`, a
+  local VITS worker, or the server engine calling `/api/tts`), entering the
+  `speaking` state ("Speaking…"). The engine's `onend` event transitions back
+  to `result`.
+- Starting a new recording (`pointerdown`) calls `ttsEngine.cancel()` so the
+  user can interrupt the assistant mid-speech.
 
 ### 4.3 Audio capture
 
@@ -247,7 +290,8 @@ Settings page (`/settings`) writes a `soundai_model` cookie. Precedence at load:
 
 - Template `settings_html/index.html.heex` renders two selects:
   1. `<select id="stt-model">` — STT model picker (Whisper models).
-  2. `<select id="tts-model">` — TTS engine picker (local models + native API).
+  2. `<select id="tts-model">` — TTS engine picker (local VITS model, `server`
+     — the in-process Elixir engine — and the native API).
   Each `<option>` carries `data-label` and `data-desc` so the client can render
   descriptions/saved confirmation without the server.
 - `assets/js/settings.js` exports `mountSTTSettings` and `mountTTSSettings`,
@@ -277,7 +321,9 @@ Settings page (`/settings`) writes a `soundai_model` cookie. Precedence at load:
    the network never freezes the page. An `#offline-banner` ("Offline — speech
    recognition still works locally") is shown when `navigator.onLine` flips.
    Transcription keeps working fully offline; only the transcript send to
-   `/api/transcriptions` is best-effort and fails quietly (see §4.2).
+   `/api/transcriptions` is best-effort and fails quietly (see §4.2). The
+   `server` TTS engine needs a network round trip; on failure the assistant
+   falls back to the native engine with a quiet note.
 
 For full offline: visit the page once online (populates model + shell cache),
 then reload offline.
@@ -297,8 +343,9 @@ serves CORP.
 ## 9. Build pipeline
 
 - **esbuild** (`config/config.exs`, `:esbuild` `:soundai`): bundles
-  `js/app.js` and `js/whisper_worker.js` → `priv/static/assets/js/`. Output is
-  gitignored; always rebuild before testing served assets.
+  `js/app.js`, `js/whisper_worker.js`, and `js/tts_worker.js` →
+  `priv/static/assets/js/`. Output is gitignored; always rebuild before testing
+  served assets.
 - **Tailwind v4** (`assets/css/app.css`): no `tailwind.config.js`; uses the
   `@import "tailwindcss" source(none)` + `@source` form. Icons come from the
   `heroicons` vendor plugin; components are hand-written (no daisyUI
@@ -317,11 +364,16 @@ mix precommit      # compile --warnings-as-errors, format, credo --strict, dialy
 ## 10. Testing
 
 - Controller tests in `apps/soundai/test/soundai_web/controllers/`
-  (`HomeControllerTest`, `SettingsControllerTest`, `TranscriptionControllerTest`):
-  assert the server-rendered shell (element ids, links, option values, no header
-  on settings) and the JSON envelope/validation of `POST /api/transcriptions`
-  (valid → 201 `{"ok": true, "response": <text>}`, missing/blank/oversized text
-  → 422).
+  (`HomeControllerTest`, `SettingsControllerTest`, `TranscriptionControllerTest`,
+  `TTSControllerTest`): assert the server-rendered shell (element ids, links,
+  option values, no header on settings) and the JSON envelope/validation of
+  `POST /api/transcriptions` (valid → 201 `{"ok": true, "response": <text>}`,
+  missing/blank/oversized text → 422) and `POST /api/tts` (valid → 200
+  `audio/wav` with headers, 422 on bad text, 503 when no model is configured).
+  `TTSControllerTest` injects a fake adapter into `Soundai.TTS` so no ONNX model
+  is needed in tests.
+- `Soundai.TTS` unit tests live in `test/soundai/` (`tts_test.exs`,
+  `vits_tokenizer_test.exs`, `wav_test.exs`).
 - `layouts_test.exs` / `core_components_test.exs` still use
   `Phoenix.LiveViewTest.render_component` (the dep remains for compile-time
   components).
@@ -343,8 +395,13 @@ mix precommit
   `mix release elixir_stage`. `docker-compose.yml` publishes both ports and
   expects `PHX_HOST=localhost` (prod force-SSLs non-localhost hosts).
 - In production the service worker is registered and digested assets are
-  fingerprinted; the un-hashed `whisper_worker.js` stays served at its stable
-  URL so `new Worker(...)` keeps working.
+  fingerprinted; the un-hashed `whisper_worker.js` / `tts_worker.js` stay served
+  at their stable URLs so `new Worker(...)` keeps working.
+- Server TTS runs **in-process** — no separate service. The model lives in
+  `priv/tts/` (e.g. `model.onnx`) and is shipped with the release; point
+  `SOUNDAI_TTS_MODEL_PATH` elsewhere to override. When the file is absent the
+  `OrtexServer` is not started and `/api/tts` reports `503`, so the feature is
+  safely off until the model is deployed.
 
 ## 12. Gotchas & conventions
 
@@ -365,6 +422,17 @@ mix precommit
 - TTS engine options live in `SettingsHTML` (`@tts_models`); the `tts_engine.js`
   registry is the JS counterpart. When a new engine class is added, register it
   in `tts_engine.js` and add the corresponding option to `@tts_models`.
+- **Server TTS is optional and in-process**: config lives under
+  `config :soundai, Soundai.TTS` (`model_path`, `max_text_length`; see
+  `config/config.exs` and `config/runtime.exs`). The model file is checked at
+  boot (`Soundai.TTS.enabled?/0`) — the `OrtexServer` GenServer is only started
+  when it exists.
+- **ONNX sessions are not safe for concurrent runs**: every synthesis goes
+  through the single `Soundai.TTS.OrtexServer` GenServer (a FIFO queue), so
+  requests are serialized. Do not call `Ortex.run/2` outside that process.
+- `Soundai.TTS` is a thin seam with an injectable `:adapter` (tests use
+  `TTSFakeAdapter`); keep synthesis behind it, never call `OrtexServer` from a
+  controller directly.
 
 ## 13. TTS benchmarks (T0008)
 
@@ -376,7 +444,7 @@ WASM only (WebGPU is unavailable in Node.js). Numbers are single cold-load runs
 Scope note: WebGPU, cached loads, and memory footprint were **not** measured.
 The removal decision does not hinge on them — the `speaker_embeddings`
 interface break is environment-independent. Benchmark scripts are preserved in
-`sdlc/tickets/` (`T0008_test_tts.mjs`, `T0008_supertonic_test.html`) so the
+`sdlc/tickets/done/` (`T0008_test_tts.mjs`, `T0008_supertonic_test.html`) so the
 numbers can be reproduced or extended later.
 
 | Metric | Xenova/mms-tts-spa | Supertonic-TTS-2-ONNX |
@@ -396,4 +464,7 @@ Reasons:
 3. **7x larger download** (260 MB vs 38 MB) — significant barrier on mobile/limited connections.
 4. **Voice files are Git LFS binaries** — additional complexity to load speaker embeddings in browser context.
 
-Default engine remains `Xenova/mms-tts-spa`.
+Default engine remains `Xenova/mms-tts-spa`. That same model is what the
+in-process Elixir server engine runs with Ortex/ONNX (`priv/tts/`), so these
+numbers also characterize the server-side TTS backend (its latency being the
+browser ↔ `/api/tts` round trip on top of the synthesis cost).

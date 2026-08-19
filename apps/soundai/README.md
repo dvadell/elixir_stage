@@ -9,16 +9,21 @@ to you. Built for people who prefer talking over reading (see the PRD).
 
 Speech is transcribed **in the browser** — raw microphone audio never leaves the
 device. The transcribed text is POSTed to Phoenix, which echoes it back as
-`response`, and the browser speaks *that server text* aloud using the native
-Web Speech API (`speechSynthesis`). There is no LLM yet: the server returns the
-same text it received.
+`response`, and the browser speaks *that server text* aloud through a pluggable
+TTS engine: the native Web Speech API (`speechSynthesis`), a local VITS model,
+or — by default — the **in-process Elixir TTS engine** (`POST /api/tts`), which
+synthesizes Spanish speech with ONNX Runtime via `Ortex`. There is no LLM yet:
+the server returns the same text it received.
 
 ```text
 press → speak → release
     → Whisper (WebGPU / WASM) transcribes locally
     → POST /api/transcriptions {text, language}
     → {"ok": true, "response": "...", "language": "..."}
-    → speechSynthesis speaks the server's response
+    → TTS engine speaks the server's response
+        ├ native  speechSynthesis
+        ├ local   Transformers.js VITS worker
+        └ server  POST /api/tts → Elixir/ONNX VITS (in-process)
 ```
 
 - **Offline-first**: once the page shell and the Whisper model are cached, STT
@@ -49,7 +54,18 @@ Legend: `[x]` implemented · `[ ]` not yet · `[~]` partial / next step
 - [x] Server echoes the text back in the JSON `response` field
 - [x] Browser speaks the server's `response` via native `speechSynthesis`
 - [x] "Speaking…" state; new press interrupts playback
-- [ ] Server-side TTS engine / streaming TTS (open decision, PRD §22)
+
+### Server-side TTS (T0009, T0010)
+- [x] In-process TTS inside Elixir: `Soundai.TTS` synthesizes with **Ortex**
+      (ONNX Runtime) running the same `Xenova/mms-tts-spa` VITS model the
+      browser uses (`priv/tts/`)
+- [x] `POST /api/tts` returns `audio/wav` (+ `X-TTS-Duration-Ms` / `X-TTS-Model`
+      headers); 422/503 on invalid text or missing model
+- [x] Requests serialized through the `Soundai.TTS.OrtexServer` GenServer
+      (ONNX sessions are not safe for concurrent runs)
+- [x] "Servidor (Elixir + ONNX)" option in `/settings`, persisted via the
+      `soundai_tts` cookie; browser falls back to the native engine on failure
+- [ ] Streaming TTS (open decision, PRD §22)
 
 ### Production UX (Milestone 4)
 - [x] `/settings` model & language picker (cookie + `?model=` URL override)
@@ -79,6 +95,10 @@ mix phx.server                 # visit http://localhost:4002
 Benchmark/override STT config with `?model=<hf-model>&language=<lang>` or via
 the `/settings` page.
 
+Server TTS needs the ONNX model at `apps/soundai/priv/tts/model.onnx` (default;
+override with `SOUNDAI_TTS_MODEL_PATH`). Without it, `/api/tts` returns 503 and
+the browser falls back to the native engine.
+
 ## Test
 
 ```sh
@@ -90,4 +110,5 @@ mix precommit                  # compile --warnings-as-errors, format, credo, di
 
 - `sdlc/PRD.md` — product requirements
 - `sdlc/TECHNICAL_DESCRIPTION.md` — architecture, conventions, gotchas
-- `sdlc/tickets/T0002.md` … `T0005.md` — feature tickets
+- `sdlc/tickets/` — active ticket (T0011.md)
+- `sdlc/tickets/done/` — implemented tickets T0002.md … T0010.md
