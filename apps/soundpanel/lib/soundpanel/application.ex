@@ -7,7 +7,8 @@ defmodule Soundpanel.Application do
   def start(_type, _args) do
     children = [
       SoundpanelWeb.Telemetry,
-      {DNSCluster, query: Application.get_env(:soundpanel, :dns_cluster_query) || :ignore},
+      # Only one app should own the cluster, and we already do this in :soundai.
+      # {DNSCluster, query: Application.get_env(:soundpanel, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Soundpanel.PubSub},
       # Start a worker by calling: Soundpanel.Worker.start_link(arg)
       # {Soundpanel.Worker, arg},
