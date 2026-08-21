@@ -23,6 +23,11 @@
 # General application configuration
 import Config
 
+config :watchtower,
+  health_port: 4003,
+  # bump to 1+ if you want readiness to depend on peers
+  min_cluster_size: 0
+
 config :soundai,
   generators: [timestamp_type: :utc_datetime]
 

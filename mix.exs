@@ -18,7 +18,8 @@ defmodule ElixirStage.MixProject do
       elixir_stage: [
         applications: [
           soundai: :permanent,
-          soundpanel: :permanent
+          soundpanel: :permanent,
+          watchtower: :permanent
         ]
       ]
     ]
