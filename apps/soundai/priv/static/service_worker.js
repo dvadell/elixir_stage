@@ -6,7 +6,7 @@
 // cached separately by Transformers.js in the browser's Cache Storage, so no
 // model requests are handled here (cross-origin requests are ignored).
 
-const CACHE_NAME = "soundai-shell-v2";
+const CACHE_NAME = "soundai-shell-v3";
 
 // Stable URLs that do not change between deployments. Digested assets
 // (app-<hash>.js etc.) are cached at runtime with stale-while-revalidate.

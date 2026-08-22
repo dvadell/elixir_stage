@@ -89,6 +89,23 @@ defmodule SoundaiWeb.ConversationAudioControllerTest do
       assert set_cookie =~ "soundai_conversation=#{new_id}"
     end
 
+    test "relays browser date/time and geolocation inside the last message", %{conn: conn} do
+      conn =
+        post_json(conn, %{
+          "text" => "¿Qué tiempo hace aquí?",
+          "date" => "2026-08-22",
+          "time" => "14:35:07",
+          "latitude" => 40.4168,
+          "longitude" => -3.7038
+        })
+
+      assert conn.status == 200
+
+      assert_received {:fake_llm_text, message}
+      assert message =~ "Fecha y hora actual: sábado 22 de agosto de 2026, 14:35"
+      assert message =~ "latitud 40,4168, longitud -3,7038"
+    end
+
     test "returns 503 with the LLM text when the TTS model is absent", %{conn: conn} do
       Application.put_env(:soundai, Soundai.TTS, adapter: OrtexServer)
 

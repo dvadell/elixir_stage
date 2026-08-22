@@ -7,10 +7,11 @@ defmodule Soundai.Conversation.LLM.FakeAdapter do
   `BranchedLLM.Chat.send_message/3` returns) so context carry-over is exercised
   through the real `Soundai.Conversation.Store` path. When configured with
   `fake_capture_pid`, the incoming context is sent to that pid as
-  `{:fake_llm_called, context}` and the call options as `{:fake_llm_opts, opts}`
-  so tests can assert what the adapter received. Configure `fake_response` to
-  override the canned reply and `fake_error` to force `{:error, reason}`
-  responses.
+  `{:fake_llm_called, context}`, the message text (transcript plus any dynamic
+  context prefix) as `{:fake_llm_text, text}`, and the call options as
+  `{:fake_llm_opts, opts}` so tests can assert what the adapter received.
+  Configure `fake_response` to override the canned reply and `fake_error` to
+  force `{:error, reason}` responses.
   """
 
   import ReqLLM.Context
@@ -36,6 +37,7 @@ defmodule Soundai.Conversation.LLM.FakeAdapter do
 
     if pid = config()[:fake_capture_pid] do
       send(pid, {:fake_llm_called, context})
+      send(pid, {:fake_llm_text, text})
       send(pid, {:fake_llm_opts, opts})
     end
 

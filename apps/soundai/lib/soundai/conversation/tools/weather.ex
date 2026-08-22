@@ -3,9 +3,11 @@ defmodule Soundai.Conversation.Tools.Weather do
   First LLM tool: current weather for a place, powered by
   [Open-Meteo](https://open-meteo.com) (free, no API key).
 
-  `tool/0` builds the `ReqLLM.Tool` handed to the LLM; the callback geocodes
-  the requested location through Open-Meteo's geocoding API and then fetches
-  the current conditions from its forecast API. The result is a short Spanish,
+  `tool/0` builds the `ReqLLM.Tool` handed to the LLM; given a place name, the
+  callback geocodes it through Open-Meteo's geocoding API; given numeric
+  `latitude`/`longitude` (typically the user's geolocation relayed in the
+  system prompt), it uses them directly. Either way the current conditions are
+  fetched from Open-Meteo's forecast API. The result is a short Spanish,
   voice-friendly summary that the assistant can speak as-is.
 
   Failures return `{:error, reason}` so `branched_llm` injects the error into
@@ -61,14 +63,27 @@ defmodule Soundai.Conversation.Tools.Weather do
     ReqLLM.Tool.new!(
       name: "get_weather",
       description:
-        "Obtiene el tiempo actual de una ciudad o lugar. Úsala cuando el usuario " <>
-          "pregunte por el clima o la temperatura.",
+        "Obtiene el tiempo actual de una ciudad o lugar, o de la ubicación del " <>
+          "usuario. Úsala cuando el usuario pregunte por el clima o la temperatura. " <>
+          "Si el usuario pregunta por el tiempo en su propia ubicación, llama a la " <>
+          "herramienta con las coordenadas de su sistema sin pedirle nada.",
       parameter_schema: %{
         type: "object",
         properties: %{
-          location: %{type: "string", description: "Nombre del lugar, por ejemplo: Madrid"}
+          location: %{
+            type: "string",
+            description: "Nombre del lugar, por ejemplo: Madrid"
+          },
+          latitude: %{
+            type: "number",
+            description: "Latitud del lugar; úsala (con longitude) para la ubicación del usuario"
+          },
+          longitude: %{
+            type: "number",
+            description: "Longitud del lugar; úsala (con latitude) para la ubicación del usuario"
+          }
         },
-        required: ["location"]
+        required: []
       },
       callback: &current/1
     )
@@ -77,23 +92,51 @@ defmodule Soundai.Conversation.Tools.Weather do
   @doc """
   Tool callback: returns `{:ok, summary}` with the current conditions or
   `{:error, reason}` when the place is unknown or the service fails.
+
+  Accepts either a place `location` name (geocoded first) or numeric
+  `latitude`/`longitude` coordinates (used as-is); an explicit non-blank place
+  name wins over coordinates.
   """
-  def current(%{"location" => location}) when is_binary(location) do
+  def current(%{"location" => location} = args) when is_binary(location) do
     case String.trim(location) do
-      "" -> {:error, "empty location"}
-      place -> place |> geocode() |> fetch_forecast()
+      "" ->
+        # A blank name may accompany user coordinates; only complain about the
+        # empty location when there is nothing else to go on.
+        if valid_coordinates?(args) do
+          current(Map.delete(args, "location"))
+        else
+          {:error, "empty location"}
+        end
+
+      place ->
+        place |> geocode() |> fetch_forecast()
+    end
+  end
+
+  def current(%{"latitude" => lat, "longitude" => lon} = args)
+      when is_number(lat) and is_number(lon) do
+    if valid_coordinates?(args) do
+      place = %{label: "En tu zona", latitude: lat, longitude: lon}
+      fetch_forecast({:ok, place})
+    else
+      {:error, "invalid arguments"}
     end
   end
 
   def current(_args), do: {:error, "invalid arguments"}
+
+  defp valid_coordinates?(%{"latitude" => lat, "longitude" => lon})
+       when is_number(lat) and is_number(lon),
+       do: lat >= -90 and lat <= 90 and lon >= -180 and lon <= 180
+
+  defp valid_coordinates?(_args), do: false
 
   defp geocode(place) do
     case request(@geocoding_url, name: place, count: 1, language: "es", format: "json") do
       {:ok, %{"results" => [first | _]}} ->
         {:ok,
          %{
-           name: first["name"],
-           country: first["country"],
+           label: "#{first["name"]}, #{first["country"]}",
            latitude: first["latitude"],
            longitude: first["longitude"]
          }}
@@ -140,7 +183,7 @@ defmodule Soundai.Conversation.Tools.Weather do
     conditions =
       Map.get(@weather_codes, current["weather_code"], "condición desconocida")
 
-    "#{place.name}, #{place.country}: #{temperature} grados, #{conditions}. " <>
+    "#{place.label}: #{temperature} grados, #{conditions}. " <>
       "Sensación térmica #{feels_like} grados, humedad #{humidity} porciento, " <>
       "viento #{wind} kilómetros por hora."
   end

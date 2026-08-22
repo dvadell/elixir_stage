@@ -25,7 +25,7 @@ defmodule Soundai.ConversationTest do
     :ok
   end
 
-  describe "submit_transcript/2" do
+  describe "submit_transcript/3" do
     test "returns the LLM text (not the echo) and a conversation id" do
       assert {:ok, "Respuesta simulada", id} = Conversation.submit_transcript("¿Qué hora es?")
       assert byte_size(id) > 0
@@ -36,11 +36,88 @@ defmodule Soundai.ConversationTest do
       {:ok, _, _id} = Conversation.submit_transcript("Hola")
       assert_received {:fake_llm_called, %{messages: [system | _]}}
 
-      content = Enum.map_join(system.content, "\n", & &1.text)
+      content = system_content(system)
       assert system.role == :system
       assert content =~ "reconocimiento de voz"
       assert content =~ "partir o unir palabras"
       assert content =~ "frases cortas y sencillas"
+    end
+
+    test "keeps the system prompt static (no dynamic context in it)" do
+      meta = %{
+        date: "2026-08-22",
+        time: "14:35:07",
+        timezone: "Europe/Madrid",
+        latitude: 40.4168,
+        longitude: -3.7038
+      }
+
+      {:ok, _, _id} = Conversation.submit_transcript("Hola", nil, meta)
+      content = system_content()
+
+      refute content =~ "Fecha y hora actual"
+      refute content =~ "Ubicación aproximada"
+    end
+
+    test "prepends the browser date and time to the last message" do
+      meta = %{date: "2026-08-22", time: "14:35:07", timezone: "Europe/Madrid"}
+      {:ok, _, _id} = Conversation.submit_transcript("¿Qué hora es?", nil, meta)
+
+      message = last_message()
+
+      assert message =~
+               ~S{[Fecha y hora actual: sábado 22 de agosto de 2026, 14:35 (Europe/Madrid).]}
+
+      assert String.ends_with?(message, "\n\n¿Qué hora es?")
+    end
+
+    test "ignores malformed browser date/time and sends the bare transcript" do
+      bad_meta = %{date: "22/08/2026", time: "25:99:00", timezone: 42}
+      {:ok, _, _id} = Conversation.submit_transcript("Hola", nil, bad_meta)
+
+      assert last_message() == "Hola"
+    end
+
+    test "relays the browser geolocation in the last message" do
+      meta = %{latitude: 40.4168, longitude: -3.7038, date: "2026-08-22", time: "09:00:00"}
+      {:ok, _, _id} = Conversation.submit_transcript("Hola", nil, meta)
+
+      message = last_message()
+      assert message =~ "Ubicación aproximada del usuario: latitud 40,4168, longitud -3,7038"
+      assert message =~ "coordenadas GPS"
+    end
+
+    test "omits the location block without geolocation" do
+      {:ok, _, _id} = Conversation.submit_transcript("Hola")
+      refute last_message() =~ "Ubicación aproximada"
+    end
+
+    test "ignores out-of-range coordinates" do
+      {:ok, _, _id} =
+        Conversation.submit_transcript("Hola", nil, %{latitude: 120.0, longitude: 999.0})
+
+      refute last_message() =~ "Ubicación aproximada"
+    end
+
+    test "the dynamic context never leaks into the stored context" do
+      {:ok, _, id} =
+        Conversation.submit_transcript("Hola", nil, %{
+          date: "2026-08-22",
+          time: "14:35:07",
+          latitude: 40.4168,
+          longitude: -3.7038
+        })
+
+      # The stored conversation keeps only the configured system prompt.
+      assert {:ok, context} = Store.get(id)
+      [persisted_system | _] = ReqLLM.Context.to_list(context)
+      refute system_content(persisted_system) =~ "Fecha y hora actual"
+
+      # And the next turn's system prompt is byte-for-byte the same.
+      {:ok, _, ^id} = Conversation.submit_transcript("Segunda pregunta", id)
+      assert_received {:fake_llm_called, %{messages: [first_system | _]}}
+      first_system_content = system_content(first_system)
+      assert system_content() == first_system_content
     end
 
     test "honors a configured :system_prompt override" do
@@ -52,7 +129,7 @@ defmodule Soundai.ConversationTest do
 
       {:ok, _, _id} = Conversation.submit_transcript("Hola")
       assert_received {:fake_llm_called, %{messages: [system | _]}}
-      assert Enum.map_join(system.content, "\n", & &1.text) == "Custom prompt"
+      assert system_content(system) == "Custom prompt"
     end
 
     test "a second turn with the same id sees the previous assistant turn" do
@@ -172,7 +249,6 @@ defmodule Soundai.ConversationTest do
       )
 
       import ExUnit.CaptureLog
-      require Logger
 
       previous_level = Logger.level()
       Logger.configure(level: :info)
@@ -217,5 +293,19 @@ defmodule Soundai.ConversationTest do
       assert Store.delete(id) == :ok
       assert Store.get(id) == :error
     end
+  end
+
+  defp last_message do
+    assert_received {:fake_llm_text, text}
+    text
+  end
+
+  defp system_content do
+    assert_received {:fake_llm_called, %{messages: [system | _]}}
+    system_content(system)
+  end
+
+  defp system_content(system) do
+    Enum.map_join(system.content, "\n", & &1.text)
   end
 end

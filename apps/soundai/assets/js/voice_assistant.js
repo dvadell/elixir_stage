@@ -13,9 +13,9 @@
 // Whisper) on WebGPU or WASM, and as long as the page shell and the speech
 // model are already cached, STT keeps working with no network at all. The only
 // server communication is the best-effort POST of the transcript text to
-// `/api/transcriptions`; the server's `response` (the same text today, the LLM
-// reply later) is spoken aloud through the pluggable TTS engine
-// (`tts_engine.js`), which currently routes to the native Web Speech API.
+// `/api/transcriptions`, together with optional client context (geolocation,
+// timezone) that the server relays into the LLM system prompt; the server's
+// response is spoken aloud through the pluggable TTS engine (`tts_engine.js`).
 
 import { WHISPER_CONFIG } from "./whisper_config.js";
 import { TTS_CONFIG } from "./tts_config.js";
@@ -68,6 +68,7 @@ class VoiceAssistantController {
     this.error = null;
     this.progress = null;
     this.sendNote = null;
+    this.geolocation = null;
     this._speakWatchdog = null;
     this.config = this.resolveConfig();
     this.ttsEngine = createTTSEngine(this.config.tts);
@@ -107,6 +108,7 @@ class VoiceAssistantController {
     // the assistant never waits on the download.
     this.setState("loading");
     this.preload();
+    this.requestGeolocation();
   }
 
   stop() {
@@ -151,6 +153,57 @@ class VoiceAssistantController {
       }
     }
     return null;
+  }
+
+  // Best-effort geolocation so the assistant can answer location questions
+  // ("¿qué tiempo hace aquí?"). Requested once per page load and never blocks
+  // anything: a denial, timeout or unsupported browser simply means transcripts
+  // are sent without coordinates.
+  requestGeolocation() {
+    if (!navigator.geolocation || typeof navigator.geolocation.getCurrentPosition !== "function") {
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords || {};
+        if (typeof latitude === "number" && typeof longitude === "number") {
+          this.geolocation = { latitude, longitude };
+          this.log("geolocation:", this.geolocation);
+        }
+      },
+      (err) => console.warn("[soundai] geolocation unavailable:", err?.message || err),
+      { enableHighAccuracy: false, timeout: 10_000, maximumAge: 5 * 60 * 1000 },
+    );
+  }
+
+  // Transcript payload: the text plus client context the server relays to the
+  // LLM inside the last message — the browser's own local date and time (so
+  // the clock never depends on the server), its IANA timezone name, and the
+  // captured coordinates when geolocation was granted.
+  buildPayload(text) {
+    const now = new Date();
+    const payload = {
+      text,
+      language: this.config.language,
+      date: `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`,
+      time: `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`,
+    };
+    const timezone = this.timezoneName();
+    if (timezone) payload.timezone = timezone;
+    if (this.geolocation) {
+      payload.latitude = this.geolocation.latitude;
+      payload.longitude = this.geolocation.longitude;
+    }
+    return payload;
+  }
+
+  timezoneName() {
+    try {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+    } catch (_err) {
+      return null;
+    }
   }
 
   setState(state) {
@@ -500,7 +553,7 @@ class VoiceAssistantController {
       const response = await this.fetchWithTimeout("/api/transcriptions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, language: this.config.language }),
+        body: JSON.stringify(this.buildPayload(text)),
       });
       status = response.status;
       if (response.ok) {
@@ -531,7 +584,7 @@ class VoiceAssistantController {
       response = await this.fetchWithTimeout("/api/conversations/audio", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, language: this.config.language }),
+        body: JSON.stringify(this.buildPayload(text)),
       });
       status = response.status;
     } catch (_err) {
@@ -577,7 +630,7 @@ class VoiceAssistantController {
       const response = await this.fetchWithTimeout("/api/transcriptions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, language: this.config.language }),
+        body: JSON.stringify(this.buildPayload(text)),
       });
       if (response.ok) {
         const data = await response.json();
@@ -913,6 +966,10 @@ class VoiceAssistantController {
       this.fail(`Transcription failed: ${err?.message || err}`);
     }
   }
+}
+
+function pad(n) {
+  return String(n).padStart(2, "0");
 }
 
 // ---------------------------------------------------------------------------

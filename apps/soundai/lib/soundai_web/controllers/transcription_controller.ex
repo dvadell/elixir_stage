@@ -21,7 +21,7 @@ defmodule SoundaiWeb.TranscriptionController do
   def create(conn, %{"text" => text} = params) do
     conversation_id = resolve_conversation_id(conn, params)
 
-    case Soundai.Conversation.submit_transcript(text, conversation_id) do
+    case Soundai.Conversation.submit_transcript(text, conversation_id, client_meta(params)) do
       {:ok, response, id} ->
         conn
         |> put_resp_cookie(@cookie_name, id,
@@ -75,6 +75,20 @@ defmodule SoundaiWeb.TranscriptionController do
     else
       Map.get(params, "conversation_id") || conn.cookies[@cookie_name]
     end
+  end
+
+  # Optional client context relayed to the LLM inside the last message: the
+  # browser's local date/time and timezone, plus geolocation when permitted.
+  # `Soundai.Conversation` re-validates every value, so anything unexpected is
+  # simply ignored downstream.
+  defp client_meta(params) do
+    %{
+      date: params["date"],
+      time: params["time"],
+      timezone: params["timezone"],
+      latitude: params["latitude"],
+      longitude: params["longitude"]
+    }
   end
 
   defp reason_message(:empty), do: "can't be blank"

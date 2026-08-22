@@ -30,7 +30,7 @@ defmodule SoundaiWeb.ConversationAudioController do
     conversation_id = resolve_conversation_id(conn, params)
     language = Map.get(params, "language", @default_language)
 
-    case Soundai.Conversation.submit_transcript(text, conversation_id) do
+    case Soundai.Conversation.submit_transcript(text, conversation_id, client_meta(params)) do
       {:ok, response, id} ->
         synthesize(conn, response, id, language)
 
@@ -66,6 +66,20 @@ defmodule SoundaiWeb.ConversationAudioController do
     else
       Map.get(params, "conversation_id") || conn.cookies[@cookie_name]
     end
+  end
+
+  # Optional client context relayed to the LLM inside the last message: the
+  # browser's local date/time and timezone, plus geolocation when permitted.
+  # `Soundai.Conversation` re-validates every value, so anything unexpected is
+  # simply ignored downstream.
+  defp client_meta(params) do
+    %{
+      date: params["date"],
+      time: params["time"],
+      timezone: params["timezone"],
+      latitude: params["latitude"],
+      longitude: params["longitude"]
+    }
   end
 
   defp synthesize(conn, response, id, language) do

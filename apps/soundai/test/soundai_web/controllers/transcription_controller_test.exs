@@ -107,6 +107,35 @@ defmodule SoundaiWeb.TranscriptionControllerTest do
       assert %{"ok" => true, "conversation_id" => _id} = json_response(conn, 201)
     end
 
+    test "relays browser date/time and geolocation inside the last message", %{conn: conn} do
+      conn =
+        post_json(conn, %{
+          "text" => "¿Qué tiempo hace aquí?",
+          "date" => "2026-08-22",
+          "time" => "14:35:07",
+          "timezone" => "Europe/Madrid",
+          "latitude" => 40.4168,
+          "longitude" => -3.7038
+        })
+
+      assert conn.status == 201
+
+      assert_received {:fake_llm_text, message}
+
+      assert message =~
+               ~S{[Fecha y hora actual: sábado 22 de agosto de 2026, 14:35 (Europe/Madrid). Ubicación aproximada del usuario: latitud 40,4168, longitud -3,7038}
+
+      assert message =~ "Ubicación aproximada del usuario: latitud 40,4168, longitud -3,7038"
+      assert String.ends_with?(message, "\n\n¿Qué tiempo hace aquí?")
+
+      # Invalid values are ignored, not rejected.
+      conn = build_conn() |> post_json(%{"text" => "Hola", "latitude" => "norte"})
+      assert conn.status == 201
+
+      assert_received {:fake_llm_text, bare}
+      assert bare == "Hola"
+    end
+
     test "maps LLM unavailability to a 502 JSON error", %{conn: conn} do
       Application.put_env(:soundai, Soundai.Conversation,
         adapter: FakeAdapter,

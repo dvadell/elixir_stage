@@ -53,11 +53,13 @@ transcribed text -> rendered into the DOM by voice_assistant.js
 ### 1.1 Audio mode (T0014/T0015) — one server round trip
 
 ```text
-voice_assistant.js  -- POST /api/conversations/audio {text, language} (+ soundai_conversation cookie)
+voice_assistant.js  -- POST /api/conversations/audio {text, language, date,
+                      time, timezone?, latitude?, longitude?}
+                      (+ soundai_conversation cookie)
       |
       v
 SoundaiWeb.ConversationAudioController
-      | Soundai.Conversation.submit_transcript(text, conversation_id)   (LLM)
+      | Soundai.Conversation.submit_transcript(text, conversation_id, meta)  (LLM)
       | Soundai.TTS.synthesize(response_text, language)                 (Ortex/VITS)
       v
 200 audio/wav  + X-Conversation-Id, X-TTS-Duration-Ms, X-TTS-Model
@@ -69,10 +71,11 @@ ServerTTSEngine.playWav -> AudioContext.decodeAudioData -> speaker
 ### 1.2 Text mode (T0013/T0015)
 
 ```text
-voice_assistant.js  -- POST /api/transcriptions {text, language} (+ cookie)
+voice_assistant.js  -- POST /api/transcriptions {text, language, date, time,
+                      timezone?, latitude?, longitude?} (+ cookie)
       |
       v
-SoundaiWeb.TranscriptionController -> Soundai.Conversation.submit_transcript(text, id)
+SoundaiWeb.TranscriptionController -> Soundai.Conversation.submit_transcript(text, id, meta)
       |
       v
 {"ok": true, "response": <LLM text>, "conversation_id": "...", "language": "..."}
@@ -84,13 +87,28 @@ Browser tts_engine.js -> selected engine -> speaker
 
 ### 1.3 The LLM layer (T0012/T0013)
 
-`Soundai.Conversation.submit_transcript/2` is the single conversation seam. It
-validates the input, loads/creates the per-conversation `ReqLLM.Context` in the
-in-memory `Soundai.Conversation.Store` (idle TTL, default 30 min), relays the
-text through an injectable adapter (default `Soundai.Conversation.LLM` →
+`Soundai.Conversation.submit_transcript/3` is the single conversation seam. It
+validates the input, loads/creates the per-conversation `ReqLLM.Context` in
+the in-memory `Soundai.Conversation.Store` (idle TTL, default 30 min), and
+relays it through an injectable adapter (default `Soundai.Conversation.LLM` →
 `BranchedLLM.Chat.send_message/3` with `timeout: llm_timeout_ms`, default 30 s),
 persists the updated context, and returns `{:ok, text, conversation_id}` or
-`{:error, reason}` — never raising. On success the raw response is logged at
+`{:error, reason}` — never raising.
+
+**The system prompt stays exactly as configured.** Dynamic context rides in
+the *last message* instead, prefixed to the transcript as a bracketed block:
+
+```text
+[Fecha y hora actual: sábado 22 de agosto de 2026, 14:35 (Europe/Madrid). Ubicación aproximada del usuario: latitud 40,4168, longitud -3,7038 (coordenadas GPS).]
+
+<transcript>
+```
+
+The date and time come from the **browser's clock** (`date` "YYYY-MM-DD",
+`time` "HH:MM:SS", plus its IANA `timezone` name) — never from the server.
+Values that fail validation (unparseable dates, out-of-range coordinates,
+non-IANA-shaped timezone names) are dropped silently; if nothing survives,
+the bare transcript is sent. On success the raw response is logged at
 info level (`Logger.info`) for debugging, then cleaned with
 `Soundai.Conversation.SpeechText.clean/1` (strips Markdown decoration, links,
 code fences and emoji, translates unpronounceable unit symbols into Spanish
@@ -116,11 +134,20 @@ BL-03 and surfaces as `:llm_timeout`.
 returning a `ReqLLM.Tool`; empty list disables them). The first tool is
 `Soundai.Conversation.Tools.Weather`: current weather via **Open-Meteo**
 (free, no API key) — geocoding + forecast, returning a short Spanish summary
-the assistant can speak. Tool execution (detection, execution loop, result
-injection) is handled by branched_llm's orchestrator inside the same
-`send_message/3` call; tool HTTP calls are bounded (`:timeout_ms`, 5 s) so a
-slow provider cannot eat the whole LLM reply budget. Tests mock HTTP with
-`Req.Test` through the tool's `:req_options` config key.
+the assistant can speak. The tool accepts either a place `location` name
+(geocoded) or numeric `latitude`/`longitude`, so the coordinates relayed in
+the last message make "¿qué tiempo hace aquí?" work without asking the user.
+Tool execution (detection, execution loop, result injection) is handled by
+branched_llm's orchestrator inside the same `send_message/3` call; tool HTTP
+calls are bounded (`:timeout_ms`, 5 s) so a slow provider cannot eat the whole
+LLM reply budget. Tests mock HTTP with `Req.Test` through the tool's
+`:req_options` config key.
+
+The client context is best-effort on both ends: the browser only sends
+coordinates when geolocation permission was granted (requested once per page
+load, quietly ignored otherwise), and the server re-validates every value —
+out-of-range coordinates and unparseable date/time values are silently
+dropped from the message rather than rejected.
 
 Audio capture never leaves the browser; only the transcribed **text** is sent to
 the server. The Phoenix backend serves:
@@ -157,7 +184,7 @@ apps/soundai/
 │   └── vendor/                     heroicons plugin, topbar (unused)
 ├── lib/soundai/
 │   ├── application.ex             OTP application / supervisor tree
-│   ├── conversation.ex            LLM relay seam: submit_transcript/2 (validation,
+│   ├── conversation.ex            LLM relay seam: submit_transcript/3 (validation,
 │   │                               adapter injection, error vocabulary, reply cap)
 │   ├── conversation/
 │   │   ├── llm.ex                 default LLM adapter -> BranchedLLM.Chat.send_message/3
@@ -224,7 +251,7 @@ apps/soundai/
 ### 3.1 LLM conversation endpoints (T0013/T0014)
 
 Both JSON endpoints share the same `:api` pipeline (`:accepts`, `:fetch_cookies`),
-the same conversation seam (`Soundai.Conversation.submit_transcript/2`), and the
+the same conversation seam (`Soundai.Conversation.submit_transcript/3`), and the
 same error vocabulary:
 
 | Reason (`Soundai.Conversation`) | HTTP | JSON body |
@@ -306,6 +333,13 @@ States: `loading → idle → listening → transcribing → sending → speakin
 - The send is best-effort: on success the note disappears; on failure the
   transcript stays visible under a quiet note. When `navigator.onLine` is
   false the POST is skipped entirely.
+- Both POST bodies are built by `buildPayload/1`: the transcript text plus
+  client context the server relays to the LLM inside the last message —
+  `date` / `time` (the browser's own local wall clock, so the assistant's
+  clock never depends on the server), `timezone` (IANA name from
+  `Intl.DateTimeFormat`) and `latitude`/`longitude` when geolocation was
+  granted (`requestGeolocation`, one best-effort call per page load at boot;
+  a denial or timeout just means no coordinates).
 - Every wait is bounded (T0011/T0015): `fetchWithTimeout` aborts after 15 s,
   and a speaking watchdog (5–30 s by text length, or the server's
   `X-TTS-Duration-Ms` + 2 s in audio mode) forces the `result` state if
@@ -526,7 +560,7 @@ mix precommit
   play the returned WAV — it does **not** call `ServerTTSEngine.speak/4`
   (legacy `/api/tts` path, kept only for interface compatibility). A 503 from
   the audio endpoint falls back to text mode for that utterance.
-- **The LLM seam must never raise**: `Soundai.Conversation.submit_transcript/2`
+- **The LLM seam must never raise**: `Soundai.Conversation.submit_transcript/3`
   maps every expected failure to a stable reason (`:empty`, `:too_long`,
   `:invalid`, `:llm_unavailable`, `:llm_timeout`); controllers turn those into
   422/502/504 JSON. The client renders short Spanish quiet notes, never the
@@ -544,6 +578,13 @@ mix precommit
   model text to a controller. Tool summaries follow the same rule (the weather
   tool spells its units out). The raw response is logged at info level first,
   so debugging sees exactly what the model produced.
+- **Dynamic context rides in the last message, not the system prompt**: on
+  every turn `Soundai.Conversation` prefixes the transcript with a bracketed
+  block (browser-supplied date/time + optional user coordinates) and leaves
+  the stored system message untouched. Client-supplied meta (`date`, `time`,
+  `timezone`, `latitude`, `longitude`) is untrusted input: values that fail
+  validation are dropped silently — never rejected as 422. The clock source
+  is always the browser; there is no server-side time fallback.
 
 ## 13. TTS benchmarks (T0008)
 

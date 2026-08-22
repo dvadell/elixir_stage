@@ -43,11 +43,13 @@ defmodule Soundai.Conversation.Tools.WeatherTest do
   end
 
   describe "tool/0" do
-    test "builds the get_weather tool with a location parameter" do
+    test "builds the get_weather tool with optional place or coordinates parameters" do
       tool = Weather.tool()
 
       assert %ReqLLM.Tool{name: "get_weather"} = tool
-      assert %{properties: %{location: _}, required: ["location"]} = tool.parameter_schema
+
+      assert %{properties: %{location: _, latitude: _, longitude: _}, required: []} =
+               tool.parameter_schema
     end
 
     test "executes end-to-end through ReqLLM.Tool.execute/2" do
@@ -133,6 +135,72 @@ defmodule Soundai.Conversation.Tools.WeatherTest do
     test "rejects invalid arguments" do
       assert Weather.current(%{}) == {:error, "invalid arguments"}
       assert Weather.current(%{"location" => 42}) == {:error, "invalid arguments"}
+      refute_received _
+    end
+  end
+
+  describe "current/1 with user coordinates" do
+    test "skips geocoding and forecasts the coordinates directly" do
+      expect_forecast()
+
+      assert {:ok, summary} =
+               Weather.current(%{"latitude" => 40.4168, "longitude" => -3.7038})
+
+      assert String.starts_with?(summary, "En tu zona: 21.3 grados")
+      assert summary =~ "cielo despejado"
+    end
+
+    test "executes coordinates through ReqLLM.Tool.execute/2" do
+      expect_forecast()
+
+      assert {:ok, summary} =
+               ReqLLM.Tool.execute(Weather.tool(), %{
+                 "latitude" => 40.4168,
+                 "longitude" => -3.7038
+               })
+
+      assert summary =~ "En tu zona"
+    end
+
+    test "a non-blank place name wins over coordinates" do
+      expect_geocode()
+      expect_forecast()
+
+      assert {:ok, summary} =
+               Weather.current(%{
+                 "location" => "Madrid",
+                 "latitude" => 40.4168,
+                 "longitude" => -3.7038
+               })
+
+      assert summary =~ "Madrid, España"
+    end
+
+    test "a blank place name falls back to coordinates" do
+      expect_forecast()
+
+      assert {:ok, summary} =
+               Weather.current(%{
+                 "location" => "  ",
+                 "latitude" => 40.4168,
+                 "longitude" => -3.7038
+               })
+
+      assert summary =~ "En tu zona"
+    end
+
+    test "rejects out-of-range coordinates" do
+      assert Weather.current(%{"latitude" => 120.0, "longitude" => -3.0}) ==
+               {:error, "invalid arguments"}
+
+      assert Weather.current(%{"latitude" => 40.0, "longitude" => "west"}) ==
+               {:error, "invalid arguments"}
+
+      refute_received _
+    end
+
+    test "errors when only a blank location and no coordinates are given" do
+      assert Weather.current(%{"location" => ""}) == {:error, "empty location"}
       refute_received _
     end
   end

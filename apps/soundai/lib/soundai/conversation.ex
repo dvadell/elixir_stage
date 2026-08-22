@@ -2,11 +2,16 @@ defmodule Soundai.Conversation do
   @moduledoc """
   Entry point for transcripts produced by the browser-side Whisper STT.
 
-  The controller hands transcribed text to `submit_transcript/2`. It validates
+  The controller hands transcribed text to `submit_transcript/3`. It validates
   the input, loads (or creates) the per-conversation LLM context from
   `Soundai.Conversation.Store`, relays the text to the LLM through an injectable
   adapter (`Soundai.Conversation.LLM` by default), persists the updated context,
   and returns the LLM reply.
+
+  The system prompt stays exactly as configured. Dynamic context rides in the
+  **last message** instead, prefixed to the transcript: the browser's own local
+  date and time (the clock never depends on the server) and, when shared, the
+  user's approximate geolocation. Invalid values are dropped silently.
 
   Configuration lives under `config :soundai, Soundai.Conversation`:
 
@@ -39,8 +44,25 @@ defmodule Soundai.Conversation do
   Responde con frases cortas y sencillas, con palabras comunes y fáciles de pronunciar y de sintetizar por voz. No uses listas ni encabezados.
   """
 
+  @days ~W(lunes martes miércoles jueves viernes sábado domingo)
+  @months ~W(enero febrero marzo abril mayo junio julio agosto septiembre octubre noviembre diciembre)
+
+  @type meta :: %{
+          optional(:latitude) => number() | nil,
+          optional(:longitude) => number() | nil,
+          optional(:timezone) => String.t() | nil,
+          optional(:date) => String.t() | nil,
+          optional(:time) => String.t() | nil
+        }
+
   @doc """
   Validates and relays a transcribed utterance to the LLM.
+
+  `meta` carries optional client context relayed to the LLM inside the last
+  message: `:date` / `:time` (the browser's local wall clock, `"YYYY-MM-DD"` /
+  `"HH:MM:SS"`), `:timezone` (IANA name, informational label) and `:latitude` /
+  `:longitude` (browser geolocation, degrees). Invalid values are ignored
+  silently.
 
   ## Returns
 
@@ -50,23 +72,23 @@ defmodule Soundai.Conversation do
       validation failures.
     * `{:error, :llm_unavailable}` / `{:error, :llm_timeout}` — LLM failures.
   """
-  def submit_transcript(text, conversation_id \\ nil)
+  def submit_transcript(text, conversation_id \\ nil, meta \\ %{})
 
-  def submit_transcript(text, conversation_id) when is_binary(text) do
+  def submit_transcript(text, conversation_id, meta) when is_binary(text) and is_map(meta) do
     text = String.trim(text)
 
     case validate(text) do
-      :ok -> do_submit(text, conversation_id)
+      :ok -> do_submit(text, conversation_id, meta)
       error -> error
     end
   end
 
-  def submit_transcript(_text, _conversation_id), do: {:error, :invalid}
+  def submit_transcript(_text, _conversation_id, _meta), do: {:error, :invalid}
 
-  defp do_submit(text, conversation_id) do
+  defp do_submit(text, conversation_id, meta) do
     {id, context} = Store.get_or_new(conversation_id, system_prompt())
 
-    case llm_call(text, context) do
+    case llm_call(build_message(text, meta), context) do
       {:ok, response, new_context} ->
         Logger.info("LLM response for conversation=#{id}: #{inspect(response)}")
         Store.put(id, new_context)
@@ -119,6 +141,89 @@ defmodule Soundai.Conversation do
   defp cap_response_length(response), do: response
 
   defp system_prompt, do: config(:system_prompt, @default_system_prompt)
+
+  # ------------------------------------------------------------- last message
+
+  # The transcript prefixed with a bracketed context block (browser-supplied
+  # date/time and optional user location). The system prompt is never touched:
+  # the block travels inside this one message only.
+  defp build_message(text, meta) do
+    case context_lines(meta) do
+      [] ->
+        text
+
+      lines ->
+        IO.iodata_to_binary(["[", Enum.intersperse(lines, " "), "]\n\n", text])
+    end
+  end
+
+  defp context_lines(meta) do
+    Enum.reject([datetime_line(meta), location_line(meta)], &is_nil/1)
+  end
+
+  # "Fecha y hora actual: viernes 22 de agosto de 2026, 14:35 (Europe/Madrid)."
+  # Both values come straight from the browser's clock (`date` "YYYY-MM-DD",
+  # `time` "HH:MM:SS"); anything that does not parse as ISO date/time is
+  # dropped and the message goes through untouched.
+  defp datetime_line(meta) do
+    with {:ok, date} <- parse_date(meta[:date]),
+         {:ok, clock} <- parse_time(meta[:time]) do
+      time = Calendar.strftime(clock, "%H:%M")
+
+      "Fecha y hora actual: #{day_name(Date.day_of_week(date))} #{date.day} de " <>
+        "#{month_name(date.month)} de #{date.year}, #{time}#{zone_label(meta[:timezone])}."
+    else
+      _ -> nil
+    end
+  end
+
+  defp parse_date(date) when is_binary(date), do: Date.from_iso8601(date)
+  defp parse_date(_other), do: :error
+
+  defp parse_time(time) when is_binary(time), do: Time.from_iso8601(time)
+  defp parse_time(_other), do: :error
+
+  # Informational label; restricted to IANA-zone-shaped strings so nothing
+  # else can sneak into the prompt through it.
+  defp zone_label(tz) when is_binary(tz) and byte_size(tz) <= 64 do
+    if Regex.match?(~r|^[A-Za-z0-9_+\-/]+$|, tz), do: " (#{tz})", else: ""
+  end
+
+  defp zone_label(_other), do: ""
+
+  defp day_name(index) when index in 1..7, do: Enum.at(@days, index - 1)
+  defp month_name(index) when index in 1..12, do: Enum.at(@months, index - 1)
+
+  defp location_line(meta) do
+    with {lat, lon} <- coordinates(meta) do
+      "Ubicación aproximada del usuario: latitud #{format_coord(lat)}, " <>
+        "longitud #{format_coord(lon)} (coordenadas GPS)."
+    end
+  end
+
+  # Geolocation is untrusted input from the browser: accept only numbers in
+  # range; they are rendered rounded to four decimals (~11 m precision).
+  defp coordinates(meta) do
+    lat = number(meta[:latitude])
+    lon = number(meta[:longitude])
+
+    if lat != nil and lon != nil and lat >= -90 and lat <= 90 and lon >= -180 and lon <= 180 do
+      {lat, lon}
+    else
+      nil
+    end
+  end
+
+  defp number(n) when is_number(n), do: n * 1.0
+  defp number(_other), do: nil
+
+  defp format_coord(value) do
+    value
+    |> :erlang.float_to_binary(decimals: 4)
+    |> String.trim_trailing("0")
+    |> String.trim_trailing(".")
+    |> String.replace(".", ",")
+  end
 
   # Test seam: tests inject a fake adapter (mirrors Soundai.TTS.adapter/0).
   defp adapter do

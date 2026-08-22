@@ -8,7 +8,9 @@ to you. Built for people who prefer talking over reading (see the PRD).
 ## What works
 
 Speech is transcribed **in the browser** — raw microphone audio never leaves the
-device. The transcribed text is POSTed to Phoenix, which relays it to an **LLM**
+device. The transcribed text is POSTed to Phoenix (together with client
+context: the browser's local date/time, timezone and — when permitted —
+geolocation), which relays it to an **LLM**
 (via `branched_llm`, NVIDIA OpenAI-compatible endpoint), keeps **per-conversation
 context** server-side, and returns the assistant's reply. The browser then
 speaks that reply through a pluggable TTS engine:
@@ -24,10 +26,11 @@ speaks that reply through a pluggable TTS engine:
 ```text
 press → speak → release
     → Whisper (WebGPU / WASM) transcribes locally
-    → POST /api/transcriptions {text, language}        (text mode)
+    → POST /api/transcriptions {text, language, date, time, timezone,
+                                latitude?, longitude?}      (text mode)
         → {"ok": true, "response": <LLM text>, "conversation_id": "..."}
         → TTS engine speaks the reply (native / local VITS)
-    → POST /api/conversations/audio {text, language}   (audio mode, default)
+    → POST /api/conversations/audio {text, language, ...}   (audio mode, default)
         → 200 audio/wav (LLM + server TTS in one call) + X-Conversation-Id
         → browser plays the WAV
     (the soundai_conversation cookie keeps follow-up turns in context;
@@ -72,9 +75,15 @@ Legend: `[x]` implemented · `[ ]` not yet · `[~]` partial / next step
       (client cookie + server `reset: true`)
 - [x] Error vocabulary: `:llm_unavailable`, `:llm_timeout`, `:empty`,
       `:too_long`, `:invalid` → JSON (502/504/422) in both controllers
+- [x] Date/time + geolocation relayed to the LLM: each turn's message carries a
+      bracketed context block with the **browser's** local date and time (plus
+      its IANA timezone name) and, when the user grants permission once per
+      page load, their approximate GPS coordinates; the system prompt stays
+      exactly as configured
 - [x] First LLM tool: **weather** (`Soundai.Conversation.Tools.Weather`) —
       Open-Meteo, free and keyless; the tool is offered on every turn
-      (`config :soundai, Soundai.Conversation, :llm_tools`)
+      (`config :soundai, Soundai.Conversation, :llm_tools`); it also accepts
+      the user's coordinates, so "¿qué tiempo hace aquí?" works
 
 ### Audio output (T0005)
 - [x] Server echoes the text back in the JSON `response` field
