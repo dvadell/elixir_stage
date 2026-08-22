@@ -4,6 +4,7 @@ defmodule Soundai.ConversationTest do
   alias Soundai.Conversation
   alias Soundai.Conversation.LLM.FakeAdapter
   alias Soundai.Conversation.Store
+  alias Soundai.Conversation.Tools.Weather
 
   setup do
     previous = Application.get_env(:soundai, Soundai.Conversation)
@@ -114,6 +115,41 @@ defmodule Soundai.ConversationTest do
       )
 
       assert Conversation.submit_transcript("Hola") == {:error, :llm_timeout}
+    end
+  end
+
+  describe "LLM tools" do
+    test "offers the weather tool to the LLM by default" do
+      assert {:ok, _, _} = Conversation.submit_transcript("¿Qué tiempo hace?")
+
+      assert_received {:fake_llm_opts, opts}
+      assert [%ReqLLM.Tool{name: "get_weather"}] = opts[:tools]
+    end
+
+    test "honors a configured :llm_tools override" do
+      Application.put_env(:soundai, Soundai.Conversation,
+        adapter: FakeAdapter,
+        fake_capture_pid: self(),
+        llm_tools: [Weather]
+      )
+
+      assert {:ok, _, _} = Conversation.submit_transcript("Hola")
+
+      assert_received {:fake_llm_opts, opts}
+      assert opts[:tools] == [Weather.tool()]
+    end
+
+    test "an empty :llm_tools list disables tools" do
+      Application.put_env(:soundai, Soundai.Conversation,
+        adapter: FakeAdapter,
+        fake_capture_pid: self(),
+        llm_tools: []
+      )
+
+      assert {:ok, _, _} = Conversation.submit_transcript("Hola")
+
+      assert_received {:fake_llm_opts, opts}
+      assert opts[:tools] == []
     end
   end
 

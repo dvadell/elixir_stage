@@ -1,3 +1,5 @@
+# Tests may hit their own local health endpoint directly; no wrapper needed.
+# credo:disable-for-this-file Credo.Check.Extra.NoDirectThirdPartyCalls
 defmodule Watchtower.ApplicationTest do
   use ExUnit.Case
 

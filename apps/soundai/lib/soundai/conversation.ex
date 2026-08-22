@@ -17,13 +17,15 @@ defmodule Soundai.Conversation do
       (default: 500), so TTS latency stays sane.
     * `:store_ttl_ms` — idle TTL for conversations (default: 30 min).
     * `:adapter` — LLM adapter module (tests inject a fake).
+    * `:llm_tools` — modules exposing `tool/0` (a `ReqLLM.Tool`) handed to the
+      LLM on every turn; empty list disables tools. Default: weather tool.
 
   Errors are never raised: LLM failures map to `:llm_unavailable` / `:llm_timeout`.
   """
 
   require Logger
 
-  alias Soundai.Conversation.{LLM, Store}
+  alias Soundai.Conversation.{LLM, Store, Tools.Weather}
 
   @max_text_length 4000
 
@@ -82,8 +84,13 @@ defmodule Soundai.Conversation do
   end
 
   defp llm_call(text, context) do
-    opts = [timeout: config(:llm_timeout_ms, 30_000)]
+    opts = [timeout: config(:llm_timeout_ms, 30_000), tools: tools()]
     adapter().call(text, context, opts)
+  end
+
+  defp tools do
+    config(:llm_tools, [Weather])
+    |> Enum.map(& &1.tool())
   end
 
   defp map_llm_error(reason) when is_binary(reason) do

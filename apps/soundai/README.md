@@ -67,6 +67,9 @@ Legend: `[x]` implemented · `[ ]` not yet · `[~]` partial / next step
       (client cookie + server `reset: true`)
 - [x] Error vocabulary: `:llm_unavailable`, `:llm_timeout`, `:empty`,
       `:too_long`, `:invalid` → JSON (502/504/422) in both controllers
+- [x] First LLM tool: **weather** (`Soundai.Conversation.Tools.Weather`) —
+      Open-Meteo, free and keyless; the tool is offered on every turn
+      (`config :soundai, Soundai.Conversation, :llm_tools`)
 
 ### Audio output (T0005)
 - [x] Server echoes the text back in the JSON `response` field

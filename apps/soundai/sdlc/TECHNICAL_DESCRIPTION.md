@@ -104,6 +104,17 @@ default model is `openai:openai/gpt-oss-20b`, overridable via `LLM_MODEL` /
 `LLM_BASE_URL` (see `config/runtime.exs`). Per-call timeout handling comes from
 BL-03 and surfaces as `:llm_timeout`.
 
+**Tools**: every turn also advertises the tools from
+`config :soundai, Soundai.Conversation, :llm_tools` (modules exposing `tool/0`
+returning a `ReqLLM.Tool`; empty list disables them). The first tool is
+`Soundai.Conversation.Tools.Weather`: current weather via **Open-Meteo**
+(free, no API key) — geocoding + forecast, returning a short Spanish summary
+the assistant can speak. Tool execution (detection, execution loop, result
+injection) is handled by branched_llm's orchestrator inside the same
+`send_message/3` call; tool HTTP calls are bounded (`:timeout_ms`, 5 s) so a
+slow provider cannot eat the whole LLM reply budget. Tests mock HTTP with
+`Req.Test` through the tool's `:req_options` config key.
+
 Audio capture never leaves the browser; only the transcribed **text** is sent to
 the server. The Phoenix backend serves:
 
@@ -143,7 +154,8 @@ apps/soundai/
 │   │                               adapter injection, error vocabulary, reply cap)
 │   ├── conversation/
 │   │   ├── llm.ex                 default LLM adapter -> BranchedLLM.Chat.send_message/3
-│   │   └── store.ex               per-conversation context store (GenServer, idle TTL)
+│   │   ├── store.ex               per-conversation context store (GenServer, idle TTL)
+│   │   └── tools/weather.ex       first LLM tool: get_weather (Open-Meteo, free)
 │   ├── mailer.ex
 │   └── tts/
 │       ├── tts.ex                 server-side TTS seam: synthesize/2 (Ortex)
@@ -511,6 +523,12 @@ mix precommit
   `:invalid`, `:llm_unavailable`, `:llm_timeout`); controllers turn those into
   422/502/504 JSON. The client renders short Spanish quiet notes, never the
   error state.
+- **LLM tools**: tool callbacks must return `{:ok, result}` / `{:error, reason}`
+  (branched_llm injects errors into the context; the LLM phrases the apology).
+  Keep tool HTTP calls bounded (`:timeout_ms`) and mock them in tests via
+  `Req.Test` + the tool's `:req_options` config key — never hit the real API
+  from the suite. Map-style `parameter_schema` passes string-keyed args through
+  unchanged (no NimbleOptions validation); validate inside the callback.
 
 ## 13. TTS benchmarks (T0008)
 
