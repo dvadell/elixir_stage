@@ -48,6 +48,9 @@ config :phoenix, :plug_init_mode, :runtime
 config :phoenix_live_view,
   enable_expensive_runtime_checks: true
 
+# Watchtower health server port during tests (kept off the default 4003 so
+# tests never collide with a locally running dev server).
+config :watchtower, health_port: 4004
 # Sort query params output of verified routes for robust url comparisons
 config :phoenix,
   sort_verified_routes_query_params: true

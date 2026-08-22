@@ -26,6 +26,7 @@ defmodule Watchtower.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
+      {:req, "~> 0.7"},
       {:dns_cluster, "~> 0.2"},
       {:plug, "~> 1.20"},
       {:bandit, "~> 1.12"}
