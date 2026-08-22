@@ -90,11 +90,18 @@ in-memory `Soundai.Conversation.Store` (idle TTL, default 30 min), relays the
 text through an injectable adapter (default `Soundai.Conversation.LLM` →
 `BranchedLLM.Chat.send_message/3` with `timeout: llm_timeout_ms`, default 30 s),
 persists the updated context, and returns `{:ok, text, conversation_id}` or
-`{:error, reason}` — never raising. Replies are capped at
-`max_response_chars` (500 + "…"). The Spanish voice-assistant system prompt,
-timeout, cap and TTL are configurable under `config :soundai,
-Soundai.Conversation`. Tests inject `Soundai.Conversation.LLM.FakeAdapter`
-(same pattern as `Soundai.TTS`).
+`{:error, reason}` — never raising. On success the raw response is logged at
+info level (`Logger.info`) for debugging, then cleaned with
+`Soundai.Conversation.SpeechText.clean/1` (strips Markdown decoration, links,
+code fences and emoji, translates unpronounceable unit symbols into Spanish
+words — `°C` → "grados", `%` → "porciento", `km/h` → "kilómetros por hora" —
+spells decimal commas out loud (`12,6` → "12 coma 6") and collapses whitespace
+so TTS never reads "asterisk" or stray symbols out loud) and capped at
+`max_response_chars` (500 + "…"). The weather tool emits those words directly
+in its summaries for the same reason. The Spanish
+voice-assistant system prompt, timeout, cap and TTL are configurable under
+`config :soundai, Soundai.Conversation`. Tests inject
+`Soundai.Conversation.LLM.FakeAdapter` (same pattern as `Soundai.TTS`).
 
 `branched_llm` is a git dependency (`dvadell/branched_llm`, tag `v0.3.1`, pinned
 in `mix.lock`; its own prep work lives in `branched_llm/sdlc/tickets/` BL-01…03).
@@ -154,6 +161,7 @@ apps/soundai/
 │   │                               adapter injection, error vocabulary, reply cap)
 │   ├── conversation/
 │   │   ├── llm.ex                 default LLM adapter -> BranchedLLM.Chat.send_message/3
+│   │   ├── speech_text.ex         Markdown/emoji -> plain speakable text (SpeechText.clean/1)
 │   │   ├── store.ex               per-conversation context store (GenServer, idle TTL)
 │   │   └── tools/weather.ex       first LLM tool: get_weather (Open-Meteo, free)
 │   ├── mailer.ex
@@ -529,6 +537,13 @@ mix precommit
   `Req.Test` + the tool's `:req_options` config key — never hit the real API
   from the suite. Map-style `parameter_schema` passes string-keyed args through
   unchanged (no NimbleOptions validation); validate inside the callback.
+- **Replies must be speakable**: every LLM reply goes through
+  `Soundai.Conversation.SpeechText.clean/1` (Markdown, links, emoji and extra
+  whitespace stripped; unit symbols translated: `°C` → "grados", `%` →
+  "porciento") *before* `max_response_chars` capping and TTS — never return raw
+  model text to a controller. Tool summaries follow the same rule (the weather
+  tool spells its units out). The raw response is logged at info level first,
+  so debugging sees exactly what the model produced.
 
 ## 13. TTS benchmarks (T0008)
 

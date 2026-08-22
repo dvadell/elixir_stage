@@ -153,6 +153,42 @@ defmodule Soundai.ConversationTest do
     end
   end
 
+  describe "speech cleaning of the LLM response" do
+    test "strips Markdown decoration and emoji before returning the reply" do
+      Application.put_env(:soundai, Soundai.Conversation,
+        adapter: FakeAdapter,
+        fake_capture_pid: self(),
+        fake_response: "**Hola** \u{1F60A}\n\n- punto uno\n- punto dos"
+      )
+
+      assert {:ok, "Hola punto uno punto dos", _id} = Conversation.submit_transcript("Hola")
+    end
+
+    test "logs the raw LLM response" do
+      Application.put_env(:soundai, Soundai.Conversation,
+        adapter: FakeAdapter,
+        fake_capture_pid: self(),
+        fake_response: "**Hola**"
+      )
+
+      import ExUnit.CaptureLog
+      require Logger
+
+      previous_level = Logger.level()
+      Logger.configure(level: :info)
+
+      log =
+        capture_log(fn ->
+          Conversation.submit_transcript("Hola")
+        end)
+
+      Logger.configure(level: previous_level)
+
+      assert log =~ "LLM response for conversation="
+      assert log =~ "**Hola**"
+    end
+  end
+
   describe "Soundai.Conversation.Store TTL" do
     test "idle conversations expire and are dropped by sweep/1" do
       {:ok, _response, id} = Conversation.submit_transcript("Hola")

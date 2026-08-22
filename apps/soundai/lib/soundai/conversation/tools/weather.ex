@@ -140,8 +140,9 @@ defmodule Soundai.Conversation.Tools.Weather do
     conditions =
       Map.get(@weather_codes, current["weather_code"], "condición desconocida")
 
-    "#{place.name}, #{place.country}: #{temperature} °C, #{conditions}. " <>
-      "Sensación térmica #{feels_like} °C, humedad #{humidity}%, viento #{wind} km/h."
+    "#{place.name}, #{place.country}: #{temperature} grados, #{conditions}. " <>
+      "Sensación térmica #{feels_like} grados, humedad #{humidity} porciento, " <>
+      "viento #{wind} kilómetros por hora."
   end
 
   defp request(url, params) do

@@ -56,11 +56,11 @@ defmodule Soundai.Conversation.Tools.WeatherTest do
 
       assert {:ok, summary} = ReqLLM.Tool.execute(Weather.tool(), %{"location" => "Madrid"})
       assert summary =~ "Madrid, España"
-      assert summary =~ "21.3 °C"
+      assert summary =~ "21.3 grados"
       assert summary =~ "cielo despejado"
-      assert summary =~ "Sensación térmica 20.1 °C"
-      assert summary =~ "humedad 40%"
-      assert summary =~ "viento 8.2 km/h"
+      assert summary =~ "Sensación térmica 20.1 grados"
+      assert summary =~ "humedad 40 porciento"
+      assert summary =~ "viento 8.2 kilómetros por hora"
     end
 
     test "rejects input missing the location parameter" do
@@ -76,8 +76,9 @@ defmodule Soundai.Conversation.Tools.WeatherTest do
       assert {:ok, summary} = Weather.current(%{"location" => "Madrid"})
 
       assert summary ==
-               "Madrid, España: 21.3 °C, cielo despejado. " <>
-                 "Sensación térmica 20.1 °C, humedad 40%, viento 8.2 km/h."
+               "Madrid, España: 21.3 grados, cielo despejado. " <>
+                 "Sensación térmica 20.1 grados, humedad 40 porciento, " <>
+                 "viento 8.2 kilómetros por hora."
     end
 
     test "maps unknown weather codes to a safe fallback description" do

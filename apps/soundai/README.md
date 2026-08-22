@@ -59,7 +59,12 @@ Legend: `[x]` implemented · `[ ]` not yet · `[~]` partial / next step
 
 ### LLM conversation (T0013–T0016)
 - [x] Per-conversation context store (`Soundai.Conversation.Store`, 30 min idle TTL)
-- [x] Real LLM answers with Spanish voice-assistant system prompt; 500-char reply cap
+- [x] Real LLM answers with Spanish voice-assistant system prompt; replies are
+      stripped of Markdown/emoji and unit symbols spelled out
+      (`Soundai.Conversation.SpeechText`: `°C` → "grados", `%` → "porciento")
+      and capped
+      at 500 chars so TTS never reads "asterisk" out loud; raw responses are
+      logged at info level for debugging
 - [x] `POST /api/conversations/audio`: LLM + server TTS in one round trip (WAV)
 - [x] Client reply modes tied to the TTS picker; audio-mode 503 → text fallback
 - [x] Bounded latency (LLM 30 s timeout) + speaking/send watchdogs (no hangs)

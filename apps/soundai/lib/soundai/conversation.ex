@@ -14,7 +14,9 @@ defmodule Soundai.Conversation do
       voice-assistant prompt).
     * `:llm_timeout_ms` — how long to wait for the LLM reply (default: 30 s).
     * `:max_response_chars` — cap on the returned text, with a trailing "…"
-      (default: 500), so TTS latency stays sane.
+      (default: 500), so TTS latency stays sane. Before capping, replies are
+      run through `Soundai.Conversation.SpeechText.clean/1` so Markdown
+      decoration and emoji never reach the TTS engine.
     * `:store_ttl_ms` — idle TTL for conversations (default: 30 min).
     * `:adapter` — LLM adapter module (tests inject a fake).
     * `:llm_tools` — modules exposing `tool/0` (a `ReqLLM.Tool`) handed to the
@@ -25,7 +27,7 @@ defmodule Soundai.Conversation do
 
   require Logger
 
-  alias Soundai.Conversation.{LLM, Store, Tools.Weather}
+  alias Soundai.Conversation.{LLM, SpeechText, Store, Tools.Weather}
 
   @max_text_length 4000
 
@@ -66,8 +68,9 @@ defmodule Soundai.Conversation do
 
     case llm_call(text, context) do
       {:ok, response, new_context} ->
+        Logger.info("LLM response for conversation=#{id}: #{inspect(response)}")
         Store.put(id, new_context)
-        {:ok, cap_response_length(response), id}
+        {:ok, response |> SpeechText.clean() |> cap_response_length(), id}
 
       {:error, reason} ->
         Logger.warning("LLM call failed for conversation=#{id}: #{inspect(reason)}")

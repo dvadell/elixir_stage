@@ -8,8 +8,9 @@ defmodule Soundai.Conversation.LLM.FakeAdapter do
   through the real `Soundai.Conversation.Store` path. When configured with
   `fake_capture_pid`, the incoming context is sent to that pid as
   `{:fake_llm_called, context}` and the call options as `{:fake_llm_opts, opts}`
-  so tests can assert what the adapter received. Configure `fake_error` to force
-  `{:error, reason}` responses.
+  so tests can assert what the adapter received. Configure `fake_response` to
+  override the canned reply and `fake_error` to force `{:error, reason}`
+  responses.
   """
 
   import ReqLLM.Context
@@ -26,17 +27,19 @@ defmodule Soundai.Conversation.LLM.FakeAdapter do
   end
 
   defp respond(text, context, opts) do
+    response = config()[:fake_response] || @response
+
     new_context =
       context
       |> Context.append(user(text))
-      |> Context.append(assistant(@response))
+      |> Context.append(assistant(response))
 
     if pid = config()[:fake_capture_pid] do
       send(pid, {:fake_llm_called, context})
       send(pid, {:fake_llm_opts, opts})
     end
 
-    {:ok, @response, new_context}
+    {:ok, response, new_context}
   end
 
   defp config do
