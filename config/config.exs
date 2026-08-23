@@ -32,6 +32,10 @@ config :soundai,
   ecto_repos: [Soundai.Repo],
   generators: [timestamp_type: :utc_datetime]
 
+# The UI is Spanish-first: user-facing strings are written in Spanish at the
+# source and the default locale is "es" (see priv/gettext/es/LC_MESSAGES/*).
+config :soundai, SoundaiWeb.Gettext, default_locale: "es"
+
 # In-process TTS via Ortex/ONNX Runtime. The server only starts (and the
 # /api/tts endpoint only serves audio) when the model file actually exists at
 # the configured path. Override with e.g. SOUNDAI_TTS_MODEL_PATH in runtime.exs.
@@ -80,7 +84,12 @@ config :soundai, SoundaiWeb.Endpoint,
     layout: false
   ],
   pubsub_server: Soundai.PubSub,
-  live_view: [signing_salt: "7k3tDNoc"]
+  live_view: [signing_salt: "7k3tDNoc"],
+  # Secret material used to sign the session cookie (see SoundaiWeb.Endpoint).
+  # The value below is a public, throwaway dev/test fallback — production must
+  # set SOUNDAI_SIGNING_SALT or SECRET_KEY_BASE (config/runtime.exs). Rotating
+  # the salt invalidates existing sessions, which is acceptable here.
+  signing_salt: System.get_env("SOUNDAI_SIGNING_SALT") || "oqdOsDoPifDyJoFj"
 
 # Configure LiveView
 config :phoenix_live_view,

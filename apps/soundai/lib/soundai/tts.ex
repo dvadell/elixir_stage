@@ -6,11 +6,14 @@ defmodule Soundai.TTS do
   the same `Xenova/mms-tts-spa` VITS model the browser uses. Requests are
   serialized through `Soundai.TTS.OrtexServer`.
 
+  There is no UX length limit here: `@max_text_length` is a large safety net
+  that only stops unbounded synthesis on the serialized in-process worker.
+
   The service is **optional**: it is disabled (returns `{:error, :not_ready}`)
   unless a model path is configured and the ONNX file exists on disk.
   """
 
-  @max_text_length 2_000
+  @max_text_length 100_000
   @default_language "spanish"
 
   @doc """

@@ -16,6 +16,10 @@ services:
       PHX_SERVER: "true"
       # Use a value from your shell if set, otherwise fall back to a local-only dev secret.
       SECRET_KEY_BASE: ${SECRET_KEY_BASE:-746983425861a255babdb4afd41adcf443965d25d7badb947b9475342c3d3e14}
+      # Optional: explicit signing salt for the session cookie. When unset the
+      # app derives a stable salt from SECRET_KEY_BASE (rotation invalidates
+      # existing sessions).
+      SOUNDAI_SIGNING_SALT: ${SOUNDAI_SIGNING_SALT:-}
       # Keep this as localhost: the prod config force-SSLs every host except
       # "localhost"/"127.0.0.1", so browse to http://localhost:4001.
       # Set it to your machine's LAN IP if you want to reach it from other devices.

@@ -156,14 +156,17 @@ defmodule Soundai.ConversationTest do
       refute Enum.any?(fresh_messages, &(&1.role == :user))
     end
 
-    test "caps long responses with a trailing ellipsis" do
+    test "caps long responses with a closing note" do
       Application.put_env(:soundai, Soundai.Conversation,
         adapter: FakeAdapter,
         fake_capture_pid: self(),
         max_response_chars: 5
       )
 
-      assert {:ok, "Respu…", _id} = Conversation.submit_transcript("Hola")
+      note =
+        "Hay más para hablar de este tema, pero el texto se volvió muy largo. Me detendré acá"
+
+      assert {:ok, "Respu " <> ^note, _id} = Conversation.submit_transcript("Hola")
     end
 
     test "rejects blank text" do

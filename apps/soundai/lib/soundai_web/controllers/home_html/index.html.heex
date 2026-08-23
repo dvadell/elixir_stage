@@ -7,7 +7,7 @@
     <button
       id="reset-conversation"
       type="button"
-      aria-label={gettext("Start a new conversation")}
+      aria-label={gettext("Empezar una conversación nueva")}
       class="flex items-center gap-2 rounded-full border border-base-300/60 bg-base-100/80 px-3 py-2.5 text-xs font-medium text-base-content/70 backdrop-blur transition hover:text-base-content"
     >
       <.icon name="hero-arrow-path" class="size-5" />
@@ -15,7 +15,7 @@
     </button>
     <a
       href={~p"/settings"}
-      aria-label={gettext("Speech-to-text settings")}
+      aria-label={gettext("Ajustes de voz a texto")}
       class="flex items-center gap-2 rounded-full border border-base-300/60 bg-base-100/80 p-2.5 text-base-content/70 backdrop-blur transition hover:text-base-content"
     >
       <.icon name="hero-cog-6-tooth" class="size-5" />
@@ -37,21 +37,21 @@
     </span>
     <p class="flex items-center gap-3 text-sm font-semibold uppercase tracking-[0.25em]">
       <span class="inline-block size-2.5 animate-pulse rounded-full bg-primary"></span>
-      {gettext("Loading speech model…")}
+      {gettext("Cargando el modelo de voz…")}
     </p>
     <p
       id="model-loading-progress"
       class="text-xs font-medium tracking-wider text-base-content/50"
       hidden
     >
-      {gettext("Downloading:")} <span id="model-loading-progress-value"></span>%
+      {gettext("Descargando:")} <span id="model-loading-progress-value"></span>%
     </p>
   </div>
 
   <button
     id="record-button"
     type="button"
-    aria-label={gettext("Hold to record")}
+    aria-label={gettext("Mantén pulsado para grabar")}
     class="flex h-full w-full cursor-pointer items-center justify-center bg-base-100 text-base-content transition-colors duration-200 focus:outline-none"
     hidden
   >
@@ -76,14 +76,14 @@
             class="inline-block size-2.5 animate-pulse rounded-full bg-red-500"
             hidden
           ></span>
-          <span id="voice-label">{gettext("Hold to talk")}</span>
+          <span id="voice-label">{gettext("Mantén pulsado para hablar")}</span>
         </span>
         <span
           id="preparing-hint"
           class="text-xs font-medium tracking-wider text-base-content/50"
           hidden
         >
-          {gettext("Preparing Whisper…")} <span id="preparing-progress"></span>%
+          {gettext("Preparando Whisper…")} <span id="preparing-progress"></span>%
         </span>
       </span>
     </span>

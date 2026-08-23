@@ -231,15 +231,15 @@ class VoiceAssistantController {
   friendlyMicError(err) {
     const name = err?.name;
     if (name === "NotAllowedError" || name === "SecurityError") {
-      return "Microphone access was denied. Allow microphone access and try again.";
+      return "Acceso al micrófono denegado. Permite el acceso al micrófono e inténtalo otra vez.";
     }
     if (name === "NotFoundError" || name === "OverconstrainedError" || name === "DevicesNotFoundError") {
-      return "No microphone was found on this device.";
+      return "No se encontró ningún micrófono en este dispositivo.";
     }
     if (name === "NotReadableError") {
-      return "The microphone is already in use by another application.";
+      return "El micrófono ya está en uso por otra aplicación.";
     }
-    return err?.message || "Unable to access the microphone.";
+    return err?.message || "No se pudo acceder al micrófono.";
   }
 
   // ------------------------------------------------------------- ui rendering
@@ -337,19 +337,19 @@ class VoiceAssistantController {
   voiceLabel() {
     switch (this.state) {
       case "listening":
-        return "Listening…";
+        return "Escuchando…";
       case "transcribing":
-        return "Transcribing…";
+        return "Transcribiendo…";
       case "sending":
-        return "Sending…";
+        return "Enviando…";
       case "speaking":
-        return "Speaking…";
+        return "Hablando…";
       case "result":
-        return "Tap to talk again";
+        return "Toca para volver a hablar";
       case "error":
-        return "Tap to retry";
+        return "Toca para reintentar";
       default:
-        return "Hold to talk";
+        return "Mantén pulsado para hablar";
     }
   }
 
@@ -362,7 +362,7 @@ class VoiceAssistantController {
     worker.addEventListener("message", (event) => this.onWorkerMessage(event.data));
     worker.addEventListener("error", (event) => {
       console.error("[soundai] whisper worker crashed:", event.message || event);
-      this.fail("The speech recognition worker failed to start.");
+      this.fail("No se pudo iniciar el reconocimiento de voz.");
     });
     this.worker = worker;
     return worker;
@@ -426,7 +426,7 @@ class VoiceAssistantController {
       })
       .catch((err) => {
         this.workerInit = null;
-        this.fail(`Unable to initialize Whisper: ${err?.message || err}`);
+        this.fail(`No se pudo inicializar Whisper: ${err?.message || err}`);
         throw err;
       });
 
@@ -483,7 +483,7 @@ class VoiceAssistantController {
           this.workerInit = null;
           this.ready = false;
         }
-        this.fail(message.error || "Speech recognition failed.", { stage: message.stage });
+        this.fail(message.error || "Falló el reconocimiento de voz.", { stage: message.stage });
         break;
       default:
         console.warn("[soundai] unknown worker message:", message);
@@ -523,7 +523,7 @@ class VoiceAssistantController {
     });
     this.transcript = text;
     this.error = null;
-    this.sendNote = "Sending…";
+    this.sendNote = "Enviando…";
     this.setState("sending");
     this.sendTranscript(text);
   }
@@ -660,7 +660,7 @@ class VoiceAssistantController {
     if (typeof this.ttsEngine?.playWav !== "function") {
       // The server engine was replaced (e.g. preload fell back to native); the
       // WAV has no playback path — quiet note, never the error state.
-      this.sendNote = "Speech playback is not available.";
+      this.sendNote = "No se puede reproducir la respuesta de voz.";
       this.setState("result");
       return;
     }
@@ -675,7 +675,7 @@ class VoiceAssistantController {
       onerror: () => {
         this._stopSpeakWatchdog();
         if (this.state === "speaking") {
-          this.sendNote = "Speech playback failed.";
+          this.sendNote = "No se pudo reproducir la respuesta de voz.";
           this.setState("result");
         }
       },
@@ -699,7 +699,7 @@ class VoiceAssistantController {
       }
 
       if (!this.ttsEngine.isReady()) {
-        this.sendNote = "Speech synthesis is not available.";
+        this.sendNote = "La síntesis de voz no está disponible.";
         this.setState("result");
         return;
       }
@@ -723,7 +723,7 @@ class VoiceAssistantController {
     native.init();
 
     if (!native.isReady()) {
-      this.sendNote = "Speech synthesis is not available.";
+      this.sendNote = "La síntesis de voz no está disponible.";
       this.setState("result");
       return;
     }
@@ -754,7 +754,7 @@ class VoiceAssistantController {
           return;
         }
 
-        this.sendNote = "Speech playback failed.";
+        this.sendNote = "No se pudo reproducir la respuesta de voz.";
         this.setState("result");
       },
     });
@@ -803,7 +803,7 @@ class VoiceAssistantController {
       if (this.state !== "speaking") return;
       console.warn("[soundai] speaking timed out; forced result");
       this.ttsEngine?.cancel();
-      this.sendNote = "Speech playback did not finish.";
+      this.sendNote = "La reproducción de voz no terminó.";
       this.setState("result");
     }, budget);
   }
@@ -819,14 +819,14 @@ class VoiceAssistantController {
 
   async startCapture() {
     if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== "function") {
-      throw new Error("This browser does not support microphone access.");
+      throw new Error("Este navegador no admite el acceso al micrófono.");
     }
 
     this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
     const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
     if (!AudioContextCtor) {
-      throw new Error("This browser does not support the Web Audio API.");
+      throw new Error("Este navegador no admite la API de Web Audio.");
     }
 
     this.audioContext = new AudioContextCtor();
@@ -948,7 +948,7 @@ class VoiceAssistantController {
     try {
       audio = await this.stopCapture();
     } catch (err) {
-      return this.fail(`Failed to stop recording: ${err?.message || err}`);
+      return this.fail(`No se pudo detener la grabación: ${err?.message || err}`);
     }
 
     if (!audio) {
@@ -972,7 +972,7 @@ class VoiceAssistantController {
         [audio.buffer],
       );
     } catch (err) {
-      this.fail(`Transcription failed: ${err?.message || err}`);
+      this.fail(`No se pudo transcribir: ${err?.message || err}`);
     }
   }
 }
@@ -1001,7 +1001,7 @@ async function resampleAudio(samples, sourceRate, targetRate) {
 
   const AudioContextCtor = window.OfflineAudioContext || window.webkitOfflineAudioContext;
   if (!AudioContextCtor) {
-    throw new Error("This browser does not support audio resampling (OfflineAudioContext).");
+    throw new Error("Este navegador no admite el remuestreo de audio (OfflineAudioContext).");
   }
 
   const length = Math.max(1, Math.round((samples.length / sourceRate) * targetRate));

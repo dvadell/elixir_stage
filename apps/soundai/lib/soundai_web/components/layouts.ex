@@ -48,7 +48,7 @@ defmodule SoundaiWeb.Layouts do
       <div class="flex-none">
         <ul class="flex flex-column px-1 space-x-4 items-center">
           <li>
-            <a href="/" class="btn btn-ghost">Website</a>
+            <a href="/" class="btn btn-ghost">Sitio web</a>
           </li>
           <li>
             <a href="/" class="btn btn-ghost">GitHub</a>
@@ -56,7 +56,7 @@ defmodule SoundaiWeb.Layouts do
           <li>
             <a href={~p"/settings"} class="btn btn-ghost">
               <.icon name="hero-cog-6-tooth" class="size-4" />
-              {gettext("Settings")}
+              {gettext("Ajustes")}
             </a>
           </li>
           <li>
@@ -64,7 +64,7 @@ defmodule SoundaiWeb.Layouts do
           </li>
           <li>
             <a href="/" class="btn btn-primary">
-              Get Started <span aria-hidden="true">&rarr;</span>
+              Comenzar <span aria-hidden="true">&rarr;</span>
             </a>
           </li>
         </ul>

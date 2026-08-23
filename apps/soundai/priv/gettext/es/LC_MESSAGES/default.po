@@ -8,7 +8,7 @@
 ### to merge POT files into PO files.
 msgid ""
 msgstr ""
-"Language: en\n"
+"Language: es\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
 
 #: lib/soundai_web/controllers/settings_html.ex:52
@@ -17,7 +17,7 @@ msgid "Voz nativa del sistema"
 msgstr ""
 
 #: lib/soundai_web/components/core_components.ex:376
-#, elixir-autogen, elixir-format, fuzzy
+#, elixir-autogen, elixir-format
 msgid "Acciones"
 msgstr ""
 
@@ -102,7 +102,7 @@ msgid "Las voces integradas de tu navegador. No requiere descarga. La calidad va
 msgstr ""
 
 #: lib/soundai_web/controllers/settings_html.ex:38
-#, elixir-autogen, elixir-format, fuzzy
+#, elixir-autogen, elixir-format
 msgid "MMS Español — equilibrado"
 msgstr ""
 
@@ -152,7 +152,7 @@ msgid "Nueva conversación"
 msgstr ""
 
 #: lib/soundai_web/controllers/home_html/index.html.heex:86
-#, elixir-autogen, elixir-format, fuzzy
+#, elixir-autogen, elixir-format
 msgid "Preparando Whisper…"
 msgstr ""
 
@@ -182,7 +182,7 @@ msgid "Volver al asistente de voz"
 msgstr ""
 
 #: lib/soundai_web/controllers/settings_html.ex:18
-#, elixir-autogen, elixir-format, fuzzy
+#, elixir-autogen, elixir-format
 msgid "Whisper Base — equilibrado"
 msgstr ""
 

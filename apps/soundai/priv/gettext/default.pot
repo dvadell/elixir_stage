@@ -11,147 +11,192 @@
 msgid ""
 msgstr ""
 
-#: lib/soundai_web/components/core_components.ex:376
-#, elixir-autogen, elixir-format
-msgid "Actions"
-msgstr ""
-
-#: lib/soundai_web/controllers/home_html/index.html.heex:45
-#, elixir-autogen, elixir-format
-msgid "Hold to record"
-msgstr ""
-
-#: lib/soundai_web/controllers/home_html/index.html.heex:70
-#, elixir-autogen, elixir-format
-msgid "Hold to talk"
-msgstr ""
-
-#: lib/soundai_web/controllers/home_html/index.html.heex:77
-#, elixir-autogen, elixir-format
-msgid "Preparing Whisper…"
-msgstr ""
-
-#: lib/soundai_web/components/core_components.ex:82
-#, elixir-autogen, elixir-format
-msgid "close"
-msgstr ""
-
-#: lib/soundai_web/controllers/settings_html/index.html.heex:32
-#, elixir-autogen, elixir-format
-msgid "Applies the next time you open the voice assistant; the model is downloaded on first use."
-msgstr ""
-
-#: lib/soundai_web/controllers/settings_html/index.html.heex:90
-#, elixir-autogen, elixir-format
-msgid "Back to the voice assistant"
-msgstr ""
-
-#: lib/soundai_web/controllers/settings_html.ex:24
-#, elixir-autogen, elixir-format
-msgid "Best accuracy, noticeably better Spanish, but slower and a larger download."
-msgstr ""
-
-#: lib/soundai_web/controllers/settings_html.ex:12
-#, elixir-autogen, elixir-format
-msgid "Fastest and lightest, lowest accuracy. Best for very short utterances or slow devices."
-msgstr ""
-
-#: lib/soundai_web/controllers/settings_html.ex:19
-#, elixir-autogen, elixir-format
-msgid "Good accuracy and speed. The default; works well on most devices."
-msgstr ""
-
-#: lib/soundai_web/controllers/settings_html/index.html.heex:12
-#, elixir-autogen, elixir-format
-msgid "STT model"
-msgstr ""
-
-#: lib/soundai_web/components/layouts.ex:59
-#, elixir-autogen, elixir-format
-msgid "Settings"
-msgstr ""
-
-#: lib/soundai_web/controllers/home_html/index.html.heex:9
-#, elixir-autogen, elixir-format
-msgid "Speech-to-text settings"
-msgstr ""
-
-#: lib/soundai_web/controllers/settings_html.ex:18
-#, elixir-autogen, elixir-format
-msgid "Whisper Base — balanced"
-msgstr ""
-
-#: lib/soundai_web/controllers/settings_html.ex:23
-#, elixir-autogen, elixir-format
-msgid "Whisper Small — best Spanish"
-msgstr ""
-
-#: lib/soundai_web/controllers/settings_html.ex:11
-#, elixir-autogen, elixir-format
-msgid "Whisper Tiny — fastest"
-msgstr ""
-
-#: lib/soundai_web/controllers/home_html/index.html.heex:31
-#, elixir-autogen, elixir-format
-msgid "Loading speech model…"
-msgstr ""
-
-#: lib/soundai_web/controllers/settings_html/index.html.heex:69
-#, elixir-autogen, elixir-format
-msgid "Applies the next time you open the voice assistant. Local models are downloaded on first use."
-msgstr ""
-
-#: lib/soundai_web/controllers/settings_html/index.html.heex:5
-#, elixir-autogen, elixir-format
-msgid "Choose the speech-to-text model and text-to-speech engine the voice assistant uses."
-msgstr ""
-
-#: lib/soundai_web/controllers/home_html/index.html.heex:38
-#, elixir-autogen, elixir-format
-msgid "Downloading:"
-msgstr ""
-
-#: lib/soundai_web/controllers/settings_html.ex:39
-#, elixir-autogen, elixir-format
-msgid "Local Spanish TTS model (VITS). Runs in the browser after first download. No audio leaves your device."
-msgstr ""
-
-#: lib/soundai_web/controllers/settings_html.ex:38
-#, elixir-autogen, elixir-format
-msgid "MMS Español — balanced"
-msgstr ""
-
-#: lib/soundai_web/components/layouts/root.html.heex:48
-#, elixir-autogen, elixir-format
-msgid "Offline — speech recognition still works locally"
-msgstr ""
-
-#: lib/soundai_web/controllers/settings_html.ex:45
-#, elixir-autogen, elixir-format
-msgid "Servidor (Elixir + ONNX)"
-msgstr ""
-
-#: lib/soundai_web/controllers/settings_html.ex:46
-#, elixir-autogen, elixir-format
-msgid "Synthesized by the server via the /api/tts endpoint (VITS/ONNX). Nothing to download; requires the model to be installed on the server and a working network connection."
-msgstr ""
-
-#: lib/soundai_web/controllers/settings_html/index.html.heex:49
-#, elixir-autogen, elixir-format
-msgid "Text-to-speech engine"
-msgstr ""
-
-#: lib/soundai_web/controllers/settings_html/index.html.heex:3
-#, elixir-autogen, elixir-format
-msgid "Voice assistant settings"
-msgstr ""
-
 #: lib/soundai_web/controllers/settings_html.ex:52
 #, elixir-autogen, elixir-format
 msgid "Voz nativa del sistema"
 msgstr ""
 
+#: lib/soundai_web/components/core_components.ex:376
+#, elixir-autogen, elixir-format
+msgid "Acciones"
+msgstr ""
+
+#: lib/soundai_web/components/layouts.ex:59
+#, elixir-autogen, elixir-format
+msgid "Ajustes"
+msgstr ""
+
+#: lib/soundai_web/controllers/home_html/index.html.heex:18
+#, elixir-autogen, elixir-format
+msgid "Ajustes de voz a texto"
+msgstr ""
+
+#: lib/soundai_web/controllers/settings_html/index.html.heex:3
+#, elixir-autogen, elixir-format
+msgid "Ajustes del asistente de voz"
+msgstr ""
+
+#: lib/soundai_web/controllers/settings_html.ex:19
+#, elixir-autogen, elixir-format
+msgid "Buena precisión y velocidad. Es el predeterminado; funciona bien en la mayoría de los dispositivos."
+msgstr ""
+
+#: lib/soundai_web/controllers/home_html/index.html.heex:40
+#, elixir-autogen, elixir-format
+msgid "Cargando el modelo de voz…"
+msgstr ""
+
+#: lib/soundai_web/controllers/notes_html/index.html.heex:14
+#, elixir-autogen, elixir-format
+msgid "Contenido de la nota"
+msgstr ""
+
+#: lib/soundai_web/controllers/home_html/index.html.heex:47
+#, elixir-autogen, elixir-format
+msgid "Descargando:"
+msgstr ""
+
+#: lib/soundai_web/controllers/settings_html.ex:12
+#, elixir-autogen, elixir-format
+msgid "El más rápido y ligero, con la menor precisión. Ideal para frases muy cortas o dispositivos lentos."
+msgstr ""
+
+#: lib/soundai_web/controllers/settings_html.ex:46
+#, elixir-autogen, elixir-format
+msgid "El servidor responde por voz: el LLM y la síntesis ocurren en una sola llamada (respuesta de audio). Nada que descargar; requiere conexión y modelo de TTS instalado en el servidor."
+msgstr ""
+
+#: lib/soundai_web/controllers/settings_html/index.html.heex:5
+#, elixir-autogen, elixir-format
+msgid "Elige el modelo de voz a texto y el motor de texto a voz que usa el asistente de voz."
+msgstr ""
+
+#: lib/soundai_web/controllers/home_html/index.html.heex:10
+#, elixir-autogen, elixir-format
+msgid "Empezar una conversación nueva"
+msgstr ""
+
+#: lib/soundai_web/controllers/notes_html/index.html.heex:15
+#, elixir-autogen, elixir-format
+msgid "Escribe aquí…"
+msgstr ""
+
+#: lib/soundai_web/controllers/notes_html/index.html.heex:31
+#, elixir-autogen, elixir-format
+msgid "Guardar"
+msgstr ""
+
+#: lib/soundai_web/controllers/notes_html/index.html.heex:5
+#, elixir-autogen, elixir-format
+msgid "Información extra de mamá. El asistente lo lee en cada conversación."
+msgstr ""
+
+#: lib/soundai_web/controllers/settings_html.ex:24
+#, elixir-autogen, elixir-format
+msgid "La mejor precisión, notablemente mejor en español, pero más lento y con una descarga más grande."
+msgstr ""
+
 #: lib/soundai_web/controllers/settings_html.ex:53
 #, elixir-autogen, elixir-format
-msgid "Your browser's built-in voices. No download required. Quality varies by operating system."
+msgid "Las voces integradas de tu navegador. No requiere descarga. La calidad varía según el sistema operativo."
+msgstr ""
+
+#: lib/soundai_web/controllers/settings_html.ex:38
+#, elixir-autogen, elixir-format
+msgid "MMS Español — equilibrado"
+msgstr ""
+
+#: lib/soundai_web/controllers/home_html/index.html.heex:54
+#, elixir-autogen, elixir-format
+msgid "Mantén pulsado para grabar"
+msgstr ""
+
+#: lib/soundai_web/controllers/home_html/index.html.heex:79
+#, elixir-autogen, elixir-format
+msgid "Mantén pulsado para hablar"
+msgstr ""
+
+#: lib/soundai_web/controllers/settings_html/index.html.heex:12
+#, elixir-autogen, elixir-format
+msgid "Modelo de voz a texto"
+msgstr ""
+
+#: lib/soundai_web/controllers/settings_html.ex:39
+#, elixir-autogen, elixir-format
+msgid "Modelo local de texto a voz en español (VITS). Funciona en el navegador tras la primera descarga. Ningún audio sale de tu dispositivo."
+msgstr ""
+
+#: lib/soundai_web/controllers/settings_html/index.html.heex:49
+#, elixir-autogen, elixir-format
+msgid "Motor de texto a voz"
+msgstr ""
+
+#: lib/soundai_web/controllers/notes_controller.ex:26
+#, elixir-autogen, elixir-format
+msgid "No se pudo guardar la nota."
+msgstr ""
+
+#: lib/soundai_web/controllers/notes_controller.ex:20
+#, elixir-autogen, elixir-format
+msgid "Nota guardada."
+msgstr ""
+
+#: lib/soundai_web/controllers/notes_html/index.html.heex:3
+#, elixir-autogen, elixir-format
+msgid "Notas"
+msgstr ""
+
+#: lib/soundai_web/controllers/home_html/index.html.heex:14
+#, elixir-autogen, elixir-format
+msgid "Nueva conversación"
+msgstr ""
+
+#: lib/soundai_web/controllers/home_html/index.html.heex:86
+#, elixir-autogen, elixir-format
+msgid "Preparando Whisper…"
+msgstr ""
+
+#: lib/soundai_web/controllers/settings_html/index.html.heex:69
+#, elixir-autogen, elixir-format
+msgid "Se aplica la próxima vez que abras el asistente de voz. Los modelos locales se descargan en el primer uso."
+msgstr ""
+
+#: lib/soundai_web/controllers/settings_html/index.html.heex:32
+#, elixir-autogen, elixir-format
+msgid "Se aplica la próxima vez que abras el asistente de voz; el modelo se descarga en el primer uso."
+msgstr ""
+
+#: lib/soundai_web/controllers/settings_html.ex:45
+#, elixir-autogen, elixir-format
+msgid "Servidor (respuesta de voz)"
+msgstr ""
+
+#: lib/soundai_web/components/layouts/root.html.heex:51
+#, elixir-autogen, elixir-format
+msgid "Sin conexión — el reconocimiento de voz sigue funcionando sin internet"
+msgstr ""
+
+#: lib/soundai_web/controllers/settings_html/index.html.heex:90
+#, elixir-autogen, elixir-format
+msgid "Volver al asistente de voz"
+msgstr ""
+
+#: lib/soundai_web/controllers/settings_html.ex:18
+#, elixir-autogen, elixir-format
+msgid "Whisper Base — equilibrado"
+msgstr ""
+
+#: lib/soundai_web/controllers/settings_html.ex:23
+#, elixir-autogen, elixir-format
+msgid "Whisper Small — el mejor en español"
+msgstr ""
+
+#: lib/soundai_web/controllers/settings_html.ex:11
+#, elixir-autogen, elixir-format
+msgid "Whisper Tiny — el más rápido"
+msgstr ""
+
+#: lib/soundai_web/components/core_components.ex:82
+#, elixir-autogen, elixir-format
+msgid "cerrar"
 msgstr ""

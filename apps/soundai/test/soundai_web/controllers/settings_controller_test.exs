@@ -5,7 +5,7 @@ defmodule SoundaiWeb.SettingsControllerTest do
     conn = get(conn, ~p"/settings")
     html = html_response(conn, 200)
 
-    assert html =~ "Voice assistant settings"
+    assert html =~ "Ajustes del asistente de voz"
     assert html =~ "id=\"stt-model\""
   end
 
@@ -14,7 +14,7 @@ defmodule SoundaiWeb.SettingsControllerTest do
     html = html_response(conn, 200)
 
     assert html =~ "id=\"tts-model\""
-    assert html =~ "Text-to-speech engine"
+    assert html =~ "Motor de texto a voz"
   end
 
   test "renders without the default header", %{conn: conn} do
@@ -23,6 +23,7 @@ defmodule SoundaiWeb.SettingsControllerTest do
 
     refute html =~ "Get Started"
     refute html =~ ">Website</a>"
+    refute html =~ ">Sitio web</a>"
   end
 
   test "offers the multilingual whisper models with client-side descriptions", %{conn: conn} do
@@ -57,6 +58,6 @@ defmodule SoundaiWeb.SettingsControllerTest do
     html = html_response(conn, 200)
 
     assert html =~ ~S|href="/"|
-    assert html =~ "Back to the voice assistant"
+    assert html =~ "Volver al asistente de voz"
   end
 end

@@ -19,8 +19,9 @@ defmodule Soundai.Conversation do
     * `:system_prompt` — system prompt for new conversations (default: a Spanish
       voice-assistant prompt).
     * `:llm_timeout_ms` — how long to wait for the LLM reply (default: 30 s).
-    * `:max_response_chars` — cap on the returned text, with a trailing "…"
-      (default: 2000), so TTS latency stays sane. Before capping, replies are
+    * `:max_response_chars` — cap on the returned text (default: 2000), so TTS
+      latency stays sane. Over-long replies are cut at the cap and a closing
+      note is appended. Before capping, replies are
       run through `Soundai.Conversation.SpeechText.clean/1` so Markdown
       decoration and emoji never reach the TTS engine.
     * `:store_ttl_ms` — idle TTL for conversations (default: 30 min).
@@ -37,6 +38,7 @@ defmodule Soundai.Conversation do
   alias Soundai.Notes
 
   @max_text_length 4000
+  @truncation_note "Hay más para hablar de este tema, pero el texto se volvió muy largo. Me detendré acá"
 
   @default_system_prompt """
   Eres un asistente de voz amable y directo. Respondes en español, de forma breve y natural, como en una conversación hablada.
@@ -134,7 +136,7 @@ defmodule Soundai.Conversation do
     max_chars = config(:max_response_chars, 2000)
 
     if String.length(response) > max_chars do
-      String.slice(response, 0, max_chars) <> "…"
+      String.slice(response, 0, max_chars) <> " " <> @truncation_note
     else
       response
     end

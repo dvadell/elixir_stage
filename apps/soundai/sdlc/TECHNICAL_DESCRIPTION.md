@@ -126,7 +126,7 @@ code fences and emoji, translates unpronounceable unit symbols into Spanish
 words — `°C` → "grados", `%` → "porciento", `km/h` → "kilómetros por hora" —
 spells decimal commas out loud (`12,6` → "12 coma 6") and collapses whitespace
 so TTS never reads "asterisk" or stray symbols out loud) and capped at
-`max_response_chars` (2000 + "…"). The weather tool emits those words directly
+`max_response_chars` (2000; over-long replies are cut and a closing note is appended). The weather tool emits those words directly
 in its summaries for the same reason. The Spanish
 voice-assistant system prompt, timeout, cap and TTL are configurable under
 `config :soundai, Soundai.Conversation`. Tests inject
@@ -293,7 +293,7 @@ Per utterance: **local STT** (browser, no network) → **LLM** with a bounded
 timeout (`llm_timeout_ms`, default 30 s, passed to
 `BranchedLLM.Chat.send_message/3`; surfaced as `:llm_timeout` by BL-03) → **TTS**
 (server synthesis or browser playback). Replies are capped at
-`max_response_chars` (2000) so TTS latency stays bounded. The client also
+`max_response_chars` (2000, over-long replies cut with a closing note) so TTS latency stays bounded. The client also
 enforces its own bounds: a 15 s fetch timeout and a speaking watchdog
 (5–30 s by text length, or the server's `X-TTS-Duration-Ms` + 2 s in audio
 mode) so the UI can never stall (T0011/T0015).

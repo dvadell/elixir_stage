@@ -79,6 +79,24 @@ if config_env() == :prod do
 
   host = System.get_env("SOUNDAI_HOST") || System.get_env("PHX_HOST") || "example.com"
 
+  # The session-cookie signing salt (see SoundaiWeb.Endpoint). Prefer the
+  # explicit SOUNDAI_SIGNING_SALT env var; otherwise derive a stable value
+  # from SECRET_KEY_BASE so no salt is ever committed to source and existing
+  # deployments boot without extra configuration. Rotating either value
+  # invalidates existing sessions — acceptable for this app.
+  signing_salt =
+    case String.trim(System.get_env("SOUNDAI_SIGNING_SALT", "")) do
+      "" ->
+        Base.url_encode64(
+          :crypto.hash(:sha256, "soundai-session-salt:" <> secret_key_base),
+          padding: false
+        )
+        |> binary_part(0, 16)
+
+      salt ->
+        salt
+    end
+
   config :soundai, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 
   config :soundai, SoundaiWeb.Endpoint,
@@ -90,7 +108,8 @@ if config_env() == :prod do
       # for details about using IPv6 vs IPv4 and loopback vs public addresses.
       ip: {0, 0, 0, 0, 0, 0, 0, 0}
     ],
-    secret_key_base: secret_key_base
+    secret_key_base: secret_key_base,
+    signing_salt: signing_salt
 
   # Database connection, read from the standard PG* environment variables
   # provided by the platform: PGHOST, PGPORT (default 5432), PGUSER,

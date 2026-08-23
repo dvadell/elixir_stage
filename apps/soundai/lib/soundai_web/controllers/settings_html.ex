@@ -8,20 +8,24 @@ defmodule SoundaiWeb.SettingsHTML do
   @models [
     {
       "onnx-community/whisper-tiny",
-      gettext("Whisper Tiny — fastest"),
+      gettext("Whisper Tiny — el más rápido"),
       gettext(
-        "Fastest and lightest, lowest accuracy. Best for very short utterances or slow devices."
+        "El más rápido y ligero, con la menor precisión. Ideal para frases muy cortas o dispositivos lentos."
       )
     },
     {
       "onnx-community/whisper-base",
-      gettext("Whisper Base — balanced"),
-      gettext("Good accuracy and speed. The default; works well on most devices.")
+      gettext("Whisper Base — equilibrado"),
+      gettext(
+        "Buena precisión y velocidad. Es el predeterminado; funciona bien en la mayoría de los dispositivos."
+      )
     },
     {
       "onnx-community/whisper-small",
-      gettext("Whisper Small — best Spanish"),
-      gettext("Best accuracy, noticeably better Spanish, but slower and a larger download.")
+      gettext("Whisper Small — el mejor en español"),
+      gettext(
+        "La mejor precisión, notablemente mejor en español, pero más lento y con una descarga más grande."
+      )
     }
   ]
 
@@ -35,9 +39,9 @@ defmodule SoundaiWeb.SettingsHTML do
   @tts_models [
     {
       "Xenova/mms-tts-spa",
-      gettext("MMS Español — balanced"),
+      gettext("MMS Español — equilibrado"),
       gettext(
-        "Local Spanish TTS model (VITS). Runs in the browser after first download. No audio leaves your device."
+        "Modelo local de texto a voz en español (VITS). Funciona en el navegador tras la primera descarga. Ningún audio sale de tu dispositivo."
       )
     },
     {
@@ -51,7 +55,7 @@ defmodule SoundaiWeb.SettingsHTML do
       "native",
       gettext("Voz nativa del sistema"),
       gettext(
-        "Your browser's built-in voices. No download required. Quality varies by operating system."
+        "Las voces integradas de tu navegador. No requiere descarga. La calidad varía según el sistema operativo."
       )
     }
   ]

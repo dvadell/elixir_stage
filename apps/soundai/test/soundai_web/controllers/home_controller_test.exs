@@ -14,9 +14,9 @@ defmodule SoundaiWeb.HomeControllerTest do
     html = html_response(conn, 200)
 
     assert html =~ "id=\"model-loading\""
-    assert html =~ "Loading speech model…"
+    assert html =~ "Cargando el modelo de voz…"
     assert html =~ "id=\"record-button\""
-    assert html =~ "Hold to record"
+    assert html =~ "Mantén pulsado para grabar"
     assert html =~ "id=\"model-loading-progress\""
     assert html =~ "id=\"preparing-hint\""
   end
@@ -26,7 +26,7 @@ defmodule SoundaiWeb.HomeControllerTest do
     html = html_response(conn, 200)
 
     assert html =~ ~S|href="/settings"|
-    assert html =~ "Speech-to-text settings"
+    assert html =~ "Ajustes de voz a texto"
   end
 
   test "renders the transcript box", %{conn: conn} do

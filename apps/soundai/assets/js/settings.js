@@ -55,7 +55,7 @@ function mountSelect(settings) {
   function showSaved() {
     const option = selectedOption();
     if (!option) return;
-    savedText.textContent = `Saved: ${option.dataset.label || option.value} will be used next time the voice assistant loads.`;
+    savedText.textContent = `Guardado: ${option.dataset.label || option.value} se usará la próxima vez que abras el asistente de voz.`;
     saved.hidden = false;
   }
 

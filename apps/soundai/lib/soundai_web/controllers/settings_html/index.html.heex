@@ -1,15 +1,15 @@
 <Layouts.app flash={@flash} show_header={false}>
   <div data-stt-settings>
-    <h1 class="text-2xl font-bold tracking-tight">{gettext("Voice assistant settings")}</h1>
+    <h1 class="text-2xl font-bold tracking-tight">{gettext("Ajustes del asistente de voz")}</h1>
     <p class="mt-2 max-w-xl text-base-content/70">
       {gettext(
-        "Choose the speech-to-text model and text-to-speech engine the voice assistant uses."
+        "Elige el modelo de voz a texto y el motor de texto a voz que usa el asistente de voz."
       )}
     </p>
 
     <div class="mt-8 rounded-box border border-base-300 bg-base-100 p-6 shadow-sm">
       <label for="stt-model" class="mb-2 block text-sm font-semibold">
-        {gettext("STT model")}
+        {gettext("Modelo de voz a texto")}
       </label>
       <select
         id="stt-model"
@@ -30,7 +30,7 @@
 
       <p class="mt-3 text-sm text-base-content/60">
         {gettext(
-          "Applies the next time you open the voice assistant; the model is downloaded on first use."
+          "Se aplica la próxima vez que abras el asistente de voz; el modelo se descarga en el primer uso."
         )}
       </p>
 
@@ -46,7 +46,7 @@
 
     <div class="mt-8 rounded-box border border-base-300 bg-base-100 p-6 shadow-sm">
       <label for="tts-model" class="mb-2 block text-sm font-semibold">
-        {gettext("Text-to-speech engine")}
+        {gettext("Motor de texto a voz")}
       </label>
       <select
         id="tts-model"
@@ -67,7 +67,7 @@
 
       <p class="mt-3 text-sm text-base-content/60">
         {gettext(
-          "Applies the next time you open the voice assistant. Local models are downloaded on first use."
+          "Se aplica la próxima vez que abras el asistente de voz. Los modelos locales se descargan en el primer uso."
         )}
       </p>
 
@@ -87,7 +87,7 @@
         class="inline-flex items-center gap-2 rounded-lg px-3 py-2 font-medium transition hover:bg-base-300/60 hover:text-base-content"
       >
         <.icon name="hero-arrow-left" class="size-4" />
-        {gettext("Back to the voice assistant")}
+        {gettext("Volver al asistente de voz")}
       </a>
     </div>
   </div>

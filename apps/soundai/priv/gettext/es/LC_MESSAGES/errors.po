@@ -1,0 +1,24 @@
+## "msgid"s in this file come from POT (.pot) files.
+###
+### Do not add, change, or remove "msgid"s manually here as
+### they're tied to the ones in the corresponding POT file
+### (with the same domain).
+###
+### Use "mix gettext.extract --merge" or "mix gettext.merge"
+### to merge POT files into PO files.
+msgid ""
+msgstr ""
+"Language: es\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#. Ecto validation messages are interpolated at runtime (dynamic msgids), so
+#. they cannot be statically extracted; they are maintained by hand here.
+#: lib/soundai/notes/note.ex
+#, elixir-autogen, elixir-format
+msgid "can't be blank"
+msgstr "no puede estar vacío"
+
+#: lib/soundai/notes/note.ex
+#, elixir-autogen, elixir-format
+msgid "should be at most %{count} byte(s)"
+msgstr "debe tener como máximo %{count} byte(s)"
