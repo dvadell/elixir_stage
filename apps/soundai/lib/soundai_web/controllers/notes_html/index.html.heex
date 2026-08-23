@@ -1,0 +1,37 @@
+<Layouts.app flash={@flash}>
+  <div id="notes">
+    <h1 class="text-2xl font-bold tracking-tight">{gettext("Notas")}</h1>
+    <p class="mt-2 max-w-xl text-base-content/70">
+      {gettext("Escribe lo que quieras y guárdalo. Solo texto libre.")}
+    </p>
+
+    <div class="mt-6 rounded-box border border-base-300 bg-base-100 p-4 shadow-sm sm:p-6">
+      <.form for={@form} id="note-form" action={~p"/notes"}>
+        <.input
+          field={@form[:content]}
+          type="textarea"
+          rows={10}
+          aria-label={gettext("Contenido de la nota")}
+          placeholder={gettext("Escribe aquí…")}
+          class={[
+            "w-full min-h-[45vh] sm:min-h-[55vh] resize-y rounded-lg",
+            "border border-base-300 bg-base-200/30 p-4",
+            "text-base leading-relaxed sm:text-lg",
+            "placeholder:text-base-content/40",
+            "transition-colors duration-200",
+            "focus:border-primary focus:bg-base-100 focus:outline-none focus:ring-2 focus:ring-primary/30"
+          ]}
+        />
+
+        <div class="mt-4 flex items-center justify-end gap-3">
+          <.button
+            variant="primary"
+            class="btn btn-primary w-full px-10 sm:w-auto active:scale-[0.98]"
+          >
+            {gettext("Guardar")}
+          </.button>
+        </div>
+      </.form>
+    </div>
+  </div>
+</Layouts.app>

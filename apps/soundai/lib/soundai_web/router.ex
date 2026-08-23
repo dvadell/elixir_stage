@@ -20,6 +20,8 @@ defmodule SoundaiWeb.Router do
 
     get "/", HomeController, :index
     get "/settings", SettingsController, :index
+    get "/notes", NotesController, :index
+    post "/notes", NotesController, :create
   end
 
   # JSON API. Only a single endpoint for now: the voice assistant POSTs the

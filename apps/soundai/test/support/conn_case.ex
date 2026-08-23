@@ -9,6 +9,8 @@ defmodule SoundaiWeb.ConnCase do
 
   use ExUnit.CaseTemplate
 
+  alias Ecto.Adapters.SQL.Sandbox
+
   using do
     quote do
       # The default endpoint for testing
@@ -24,6 +26,10 @@ defmodule SoundaiWeb.ConnCase do
   end
 
   setup _tags do
+    # Check out a sandbox connection so tests that touch the database are
+    # automatically rolled back after each test.
+    Sandbox.checkout(Soundai.Repo)
+
     {:ok, conn: Phoenix.ConnTest.build_conn()}
   end
 end
