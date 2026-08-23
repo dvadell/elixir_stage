@@ -46,6 +46,9 @@ RUN mix assets.deploy
 
 # compile and build a single umbrella release containing both apps
 WORKDIR /app
+# rel/ contains the release overlays (bin/migrate, env scripts); without it
+# the release is built without them.
+COPY rel rel
 RUN mix release elixir_stage --overwrite
 
 # start a new build stage so that the final image contains only the compiled release and other runtime necessities
