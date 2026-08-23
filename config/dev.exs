@@ -1,5 +1,16 @@
 import Config
 
+# Configure the database for local development. In production the connection
+# is taken from the PG* environment variables in config/runtime.exs.
+config :soundai, Soundai.Repo,
+  username: "postgres",
+  password: "postgres",
+  hostname: "localhost",
+  database: "soundai_dev",
+  stacktrace: true,
+  show_sensitive_data_on_direct_error: true,
+  pool_size: 10
+
 # For development, we disable any cache and enable
 # debugging and code reloading.
 #

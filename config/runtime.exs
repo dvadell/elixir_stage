@@ -92,6 +92,17 @@ if config_env() == :prod do
     ],
     secret_key_base: secret_key_base
 
+  # Database connection, read from the standard PG* environment variables
+  # provided by the platform: PGHOST, PGPORT (default 5432), PGUSER,
+  # PGPASSWORD and PGDATABASE.
+  config :soundai, Soundai.Repo,
+    hostname: System.fetch_env!("PGHOST"),
+    port: String.to_integer(System.get_env("PGPORT", "5432")),
+    username: System.fetch_env!("PGUSER"),
+    password: System.fetch_env!("PGPASSWORD"),
+    database: System.fetch_env!("PGDATABASE"),
+    pool_size: 10
+
   # ## SSL Support
   #
   # To get SSL working, you will need to add the `https` key
