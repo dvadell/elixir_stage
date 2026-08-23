@@ -9,6 +9,8 @@ defmodule SoundaiWeb.ConnCase do
 
   use ExUnit.CaseTemplate
 
+  alias Ecto.Adapters.SQL.Sandbox
+
   using do
     quote do
       # The default endpoint for testing
@@ -23,7 +25,12 @@ defmodule SoundaiWeb.ConnCase do
     end
   end
 
-  setup _tags do
+  setup tags do
+    # Start a sandbox owner (shared for sync tests) so tests that touch the
+    # database are automatically rolled back after each test.
+    pid = Sandbox.start_owner!(Soundai.Repo, shared: not tags[:async])
+    on_exit(fn -> Sandbox.stop_owner(pid) end)
+
     {:ok, conn: Phoenix.ConnTest.build_conn()}
   end
 end

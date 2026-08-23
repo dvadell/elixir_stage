@@ -8,6 +8,7 @@ defmodule ElixirStage.MixProject do
       start_permanent: Mix.env() == :prod,
       listeners: [Phoenix.CodeReloader],
       releases: releases(),
+      aliases: aliases(),
       deps: deps(),
       dialyzer: [plt_add_apps: [:mix, :ex_unit]]
     ]
@@ -39,6 +40,20 @@ defmodule ElixirStage.MixProject do
       {:extra_credo, github: "dvadell/extra_credo", only: [:dev, :test], runtime: false},
       {:jump_credo_checks, "~> 0.4", only: [:dev], runtime: false},
       {:oeditus_credo, "~> 0.8", only: [:dev, :test], runtime: false}
+    ]
+  end
+
+  defp aliases do
+    [
+      precommit: [
+        "compile --warnings-as-errors",
+        "deps.unlock --unused",
+        "format",
+        "credo --strict",
+        "dialyzer",
+        ~S(cmd sh -c "MIX_ENV=test mix test --cover"),
+        "excellent_migrations.check_safety"
+      ]
     ]
   end
 end

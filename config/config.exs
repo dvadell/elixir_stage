@@ -29,6 +29,7 @@ config :watchtower,
   min_cluster_size: 0
 
 config :soundai,
+  ecto_repos: [Soundai.Repo],
   generators: [timestamp_type: :utc_datetime]
 
 # In-process TTS via Ortex/ONNX Runtime. The server only starts (and the

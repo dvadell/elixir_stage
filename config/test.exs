@@ -4,6 +4,16 @@ import Config
 # /api/tts controller tests inject a fake adapter instead.
 config :soundai, Soundai.TTS, model_path: nil
 
+# Configure the test database. The repo starts lazily (connections are only
+# opened on demand), so tests that never touch the DB need no running Postgres.
+config :soundai, Soundai.Repo,
+  username: "postgres",
+  password: "postgres",
+  hostname: "localhost",
+  database: "soundai_test#{System.get_env("MIX_TEST_PARTITION")}",
+  pool: Ecto.Adapters.SQL.Sandbox,
+  pool_size: 10
+
 # We don't run a server during test. If one is required,
 # you can enable the server option below.
 config :soundai, SoundaiWeb.Endpoint,

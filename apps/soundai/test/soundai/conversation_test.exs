@@ -1,10 +1,13 @@
 defmodule Soundai.ConversationTest do
-  use ExUnit.Case, async: false
+  # async: false: the fake LLM adapter is configured through application env,
+  # shared by every test in the module.
+  use Soundai.DataCase, async: false
 
   alias Soundai.Conversation
   alias Soundai.Conversation.LLM.FakeAdapter
   alias Soundai.Conversation.Store
   alias Soundai.Conversation.Tools.Weather
+  alias Soundai.Notes
 
   setup do
     previous = Application.get_env(:soundai, Soundai.Conversation)
@@ -192,6 +195,67 @@ defmodule Soundai.ConversationTest do
       )
 
       assert Conversation.submit_transcript("Hola") == {:error, :llm_timeout}
+    end
+  end
+
+  describe "saved notes in the last message" do
+    test "includes the saved note text in the last message" do
+      {:ok, _} = Notes.save_note(%{"content" => "la leche está en la nevera"})
+
+      assert {:ok, _, _} = Conversation.submit_transcript("¿Qué notas tengo?")
+
+      message = last_message()
+
+      assert message =~ "[Notas del usuario:\nla leche está en la nevera]"
+
+      assert String.ends_with?(message, "\n\n¿Qué notas tengo?")
+    end
+
+    test "includes the note verbatim, preserving line breaks, however big it is" do
+      # The changeset trims surrounding whitespace, so no trailing newline.
+      note =
+        String.duplicate("línea de la nota\n", 400)
+        |> String.trim_trailing()
+
+      {:ok, _} = Notes.save_note(%{"content" => note})
+
+      assert {:ok, _, _} = Conversation.submit_transcript("Hola")
+
+      message = last_message()
+
+      assert message =~
+               "[Notas del usuario:\n#{note}]"
+
+      assert String.ends_with?(message, "\n\nHola")
+    end
+
+    test "reflects the latest edit on every turn" do
+      {:ok, _} = Notes.save_note(%{"content" => "versión inicial"})
+      {:ok, _, id} = Conversation.submit_transcript("Hola")
+      assert_received {:fake_llm_text, _first_turn}
+
+      {:ok, _} = Notes.save_note(%{"content" => "versión reescrita"})
+      {:ok, _, ^id} = Conversation.submit_transcript("Segunda pregunta", id)
+
+      second_message = last_message()
+      assert second_message =~ "[Notas del usuario:\nversión reescrita]"
+      refute second_message =~ "versión inicial"
+    end
+
+    test "the dynamic notes never leak into the stored context" do
+      {:ok, _} = Notes.save_note(%{"content" => "nota persistente"})
+      {:ok, _, id} = Conversation.submit_transcript("Hola")
+
+      assert {:ok, context} = Store.get(id)
+      [persisted_system | _] = ReqLLM.Context.to_list(context)
+      refute system_content(persisted_system) =~ "nota persistente"
+
+      # A second turn re-reads the notes; they ride in that message only.
+      {:ok, _, ^id} = Conversation.submit_transcript("Segunda pregunta", id)
+      assert_received {:fake_llm_text, _first_turn}
+      second_message = last_message()
+      assert second_message =~ "nota persistente"
+      assert String.ends_with?(second_message, "\n\nSegunda pregunta")
     end
   end
 
