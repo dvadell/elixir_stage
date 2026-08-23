@@ -1,0 +1,23 @@
+#!/bin/sh
+set -eu
+
+# Run migrations for every umbrella app that ships a Release module.
+# Apps without a Release module (no database) are skipped, so this is
+# safe to run before the first app has migrations.
+#
+# When you give a new app a database, add its Release module (e.g.
+# Soundpanel.Release.migrate) AND its atom to the list below.
+
+cd -P -- "$(dirname -- "$0")"
+exec ./elixir_stage eval '
+apps = [:soundai, :soundpanel]
+for app <- apps do
+  mod = Module.concat([app, :Release])
+  if Code.ensure_loaded?(mod) do
+    IO.puts("Migrating #{app}")
+    apply(mod, :migrate, [])
+  else
+    IO.puts("#{app} has no Release module; skipping")
+  end
+end
+'
