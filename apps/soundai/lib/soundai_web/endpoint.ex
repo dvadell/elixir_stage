@@ -1,13 +1,16 @@
 defmodule SoundaiWeb.Endpoint do
   use Phoenix.Endpoint, otp_app: :soundai
 
-  # The session will be stored in the cookie and signed,
-  # this means its contents can be read but not tampered with.
-  # Set :encryption_salt if you would also like to encrypt it.
-  @session_options [
+  # The session will be stored in the cookie and signed, this means its
+  # contents can be read but not tampered with. The signing salt is secret
+  # material: it lives exclusively in configuration (`signing_salt:` under
+  # `config :soundai, SoundaiWeb.Endpoint`) — never in this file. Dev/test use
+  # a throwaway fallback; production takes SOUNDAI_SIGNING_SALT (or derives
+  # one from SECRET_KEY_BASE) in config/runtime.exs. Rotating the salt
+  # invalidates existing signed sessions, which is acceptable for this app.
+  @session_defaults [
     store: :cookie,
     key: "_soundai_key",
-    signing_salt: "RxqfOFJ4",
     same_site: "Lax"
   ]
 
@@ -37,9 +40,14 @@ defmodule SoundaiWeb.Endpoint do
     plug Phoenix.CodeReloader
   end
 
-  plug Phoenix.LiveDashboard.RequestLogger,
-    param_key: "request_logger",
-    cookie_key: "request_logger"
+  # Request logging streams recent request URLs/status/timing to anyone
+  # holding the query param/cookie, so it is a development-only affordance:
+  # compiled out whenever code reloading is off (test/prod).
+  if code_reloading? do
+    plug Phoenix.LiveDashboard.RequestLogger,
+      param_key: "request_logger",
+      cookie_key: "request_logger"
+  end
 
   plug Plug.RequestId
   plug Plug.Telemetry, event_prefix: [:phoenix, :endpoint]
@@ -51,8 +59,24 @@ defmodule SoundaiWeb.Endpoint do
 
   plug Plug.MethodOverride
   plug Plug.Head
-  plug Plug.Session, @session_options
+  plug :signed_session
   plug SoundaiWeb.Router
+
+  # Plug.Session options are resolved per request so the configured salt is
+  # read from application env at runtime (config/config.exs and the overrides
+  # in config/runtime.exs apply even inside a release, where @session_options
+  # would have been frozen at build time).
+  defp signed_session(conn, _opts) do
+    signing_salt =
+      :soundai
+      |> Application.fetch_env!(SoundaiWeb.Endpoint)
+      |> Keyword.fetch!(:signing_salt)
+
+    Plug.Session.call(
+      conn,
+      Plug.Session.init(Keyword.put(@session_defaults, :signing_salt, signing_salt))
+    )
+  end
 
   defp cross_origin_isolation_headers(conn, _opts) do
     conn

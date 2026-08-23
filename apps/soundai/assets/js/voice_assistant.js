@@ -69,6 +69,10 @@ class VoiceAssistantController {
     this.progress = null;
     this.sendNote = null;
     this.geolocation = null;
+    // Set by "Nueva conversación": the next transcript POST carries
+    // reset: true so the server drops the stored context and replaces the
+    // conversation cookie (which is HttpOnly and cannot be cleared from JS).
+    this.pendingReset = false;
     this._speakWatchdog = null;
     this.config = this.resolveConfig();
     this.ttsEngine = createTTSEngine(this.config.tts);
@@ -194,6 +198,10 @@ class VoiceAssistantController {
     if (this.geolocation) {
       payload.latitude = this.geolocation.latitude;
       payload.longitude = this.geolocation.longitude;
+    }
+    if (this.pendingReset) {
+      payload.reset = true;
+      this.pendingReset = false;
     }
     return payload;
   }
@@ -752,19 +760,20 @@ class VoiceAssistantController {
     });
   }
 
-  // "Nueva conversación": clears the conversation cookie so the next turn
-  // starts a fresh server-side context, cancels any playback, and returns the
-  // UI to the idle state. Never an error state.
+  // "Nueva conversación": marks the next transcript POST with reset: true so
+  // the server deletes the stored context and returns a fresh id, replacing
+  // the HttpOnly conversation cookie. Also cancels any playback and returns
+  // the UI to the idle state. Never an error state.
   onResetConversation(event) {
     event.preventDefault();
     this._stopSpeakWatchdog();
     this.ttsEngine?.cancel();
-    document.cookie = "soundai_conversation=; Max-Age=0; Path=/; SameSite=Lax";
+    this.pendingReset = true;
     this.error = null;
     this.transcript = null;
     this.sendNote = "Nueva conversación.";
     this.setState("idle");
-    this.log("conversation reset (cookie cleared)");
+    this.log("conversation reset scheduled (reset: true on next turn)");
   }
 
   // ------------------------------------------------------ send/speak watchdog

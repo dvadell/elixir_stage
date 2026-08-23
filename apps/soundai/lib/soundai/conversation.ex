@@ -20,7 +20,7 @@ defmodule Soundai.Conversation do
       voice-assistant prompt).
     * `:llm_timeout_ms` — how long to wait for the LLM reply (default: 30 s).
     * `:max_response_chars` — cap on the returned text, with a trailing "…"
-      (default: 500), so TTS latency stays sane. Before capping, replies are
+      (default: 2000), so TTS latency stays sane. Before capping, replies are
       run through `Soundai.Conversation.SpeechText.clean/1` so Markdown
       decoration and emoji never reach the TTS engine.
     * `:store_ttl_ms` — idle TTL for conversations (default: 30 min).
@@ -131,7 +131,7 @@ defmodule Soundai.Conversation do
   defp map_llm_error(_reason), do: :llm_unavailable
 
   defp cap_response_length(response) when is_binary(response) do
-    max_chars = config(:max_response_chars, 500)
+    max_chars = config(:max_response_chars, 2000)
 
     if String.length(response) > max_chars do
       String.slice(response, 0, max_chars) <> "…"

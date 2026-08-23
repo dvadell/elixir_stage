@@ -27,8 +27,8 @@ defmodule Soundai.TTSTest do
       assert TTS.validate_text("") == {:error, :empty}
     end
 
-    test "rejects text over 1000 bytes" do
-      assert TTS.validate_text(String.duplicate("a", 1001)) == {:error, :too_long}
+    test "rejects text over 2000 bytes" do
+      assert TTS.validate_text(String.duplicate("a", 2001)) == {:error, :too_long}
     end
 
     test "rejects non-binary input" do
@@ -55,7 +55,7 @@ defmodule Soundai.TTSTest do
       Application.put_env(:soundai, Soundai.TTS, adapter: Soundai.TTS.FakeAdapter)
 
       assert {:error, :empty} = TTS.synthesize("  ")
-      assert {:error, :too_long} = TTS.synthesize(String.duplicate("a", 1001))
+      assert {:error, :too_long} = TTS.synthesize(String.duplicate("a", 2001))
       assert {:error, :invalid} = TTS.synthesize(nil)
     end
   end

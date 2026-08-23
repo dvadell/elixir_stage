@@ -23,7 +23,8 @@ function readCookie(name) {
 }
 
 function writeCookie(name, value) {
-  document.cookie = `${name}=${encodeURIComponent(value)}; path=/; max-age=31536000; SameSite=Lax`;
+  const secure = location.protocol === "https:" ? "; Secure" : "";
+  document.cookie = `${name}=${encodeURIComponent(value)}; path=/; max-age=31536000; SameSite=Lax${secure}`;
 }
 
 // ---------------------------------------------------------------------------

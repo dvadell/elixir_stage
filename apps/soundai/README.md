@@ -66,7 +66,7 @@ Legend: `[x]` implemented · `[ ]` not yet · `[~]` partial / next step
       stripped of Markdown/emoji and unit symbols spelled out
       (`Soundai.Conversation.SpeechText`: `°C` → "grados", `%` → "porciento")
       and capped
-      at 500 chars so TTS never reads "asterisk" out loud; raw responses are
+      at 2000 chars so TTS never reads "asterisk" out loud; raw responses are
       logged at info level for debugging
 - [x] `POST /api/conversations/audio`: LLM + server TTS in one round trip (WAV)
 - [x] Client reply modes tied to the TTS picker; audio-mode 503 → text fallback
@@ -137,8 +137,16 @@ The LLM needs `NVIDIA_API_KEY` (and optionally `LLM_MODEL` / `LLM_BASE_URL`
 overrides; see `config/runtime.exs`). The default model is
 `openai:openai/gpt-oss-20b` on the NVIDIA endpoint. The effective latency budget
 per utterance is: local STT + LLM timeout (30 s, configurable
-`llm_timeout_ms`) + TTS synthesis; replies are capped at 500 chars to keep TTS
+`llm_timeout_ms`) + TTS synthesis; replies are capped at 2000 chars to keep TTS
 latency sane.
+
+Session cookies are signed with a salt that never lives in source code:
+dev/test use a throwaway fallback, production takes `SOUNDAI_SIGNING_SALT`
+(or derives one from `SECRET_KEY_BASE`). Rotating it invalidates existing
+sessions, which is acceptable for this app. The conversation cookie is
+HttpOnly and served with `Secure` on HTTPS deployments; "Nueva conversación"
+resets the context server-side via a `reset: true` flag on the next turn.
+`mix soundai.llm_smoke` redacts the API key from any printed error.
 
 ## Test
 

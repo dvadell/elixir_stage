@@ -61,7 +61,7 @@ defmodule SoundaiWeb.TTSControllerTest do
     end
 
     test "rejects oversized text", %{conn: conn} do
-      conn = post_json(conn, %{"text" => String.duplicate("a", 1001)})
+      conn = post_json(conn, %{"text" => String.duplicate("a", 2001)})
 
       assert conn.status == 422
       assert %{"errors" => %{"text" => "is too long"}} = json_response(conn, 422)

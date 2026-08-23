@@ -6,9 +6,8 @@ defmodule SoundaiWeb.ConversationAudioController do
   use SoundaiWeb, :controller
 
   alias Soundai.Conversation.Store
+  alias SoundaiWeb.ConversationCookie
 
-  @cookie_name "soundai_conversation"
-  @cookie_max_age 60 * 60 * 24 * 7
   @default_language "spanish"
 
   @doc """
@@ -56,7 +55,7 @@ defmodule SoundaiWeb.ConversationAudioController do
   # stale cookie. Clients that can clear the cookie themselves don't need it.
   defp resolve_conversation_id(conn, params) do
     if Map.get(params, "reset") in [true, "true", "1"] do
-      stale = Map.get(params, "conversation_id") || conn.cookies[@cookie_name]
+      stale = Map.get(params, "conversation_id") || conn.cookies[ConversationCookie.name()]
 
       if is_binary(stale) do
         Store.delete(stale)
@@ -64,7 +63,7 @@ defmodule SoundaiWeb.ConversationAudioController do
 
       nil
     else
-      Map.get(params, "conversation_id") || conn.cookies[@cookie_name]
+      Map.get(params, "conversation_id") || conn.cookies[ConversationCookie.name()]
     end
   end
 
@@ -85,12 +84,7 @@ defmodule SoundaiWeb.ConversationAudioController do
   defp synthesize(conn, response, id, language) do
     # The conversation already advanced on the server (context persisted), so the
     # id is offered back via cookie and body on every TTS outcome.
-    conn =
-      put_resp_cookie(conn, @cookie_name, id,
-        max_age: @cookie_max_age,
-        path: "/",
-        same_site: "Lax"
-      )
+    conn = ConversationCookie.put(conn, id)
 
     case Soundai.TTS.synthesize(response, language) do
       {:ok, %{audio: audio, content_type: content_type, duration_ms: duration_ms}} ->

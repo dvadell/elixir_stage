@@ -10,7 +10,7 @@ defmodule Soundai.TTS do
   unless a model path is configured and the ONNX file exists on disk.
   """
 
-  @max_text_length 1_000
+  @max_text_length 2_000
   @default_language "spanish"
 
   @doc """

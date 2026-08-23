@@ -126,7 +126,7 @@ code fences and emoji, translates unpronounceable unit symbols into Spanish
 words — `°C` → "grados", `%` → "porciento", `km/h` → "kilómetros por hora" —
 spells decimal commas out loud (`12,6` → "12 coma 6") and collapses whitespace
 so TTS never reads "asterisk" or stray symbols out loud) and capped at
-`max_response_chars` (500 + "…"). The weather tool emits those words directly
+`max_response_chars` (2000 + "…"). The weather tool emits those words directly
 in its summaries for the same reason. The Spanish
 voice-assistant system prompt, timeout, cap and TTL are configurable under
 `config :soundai, Soundai.Conversation`. Tests inject
@@ -283,8 +283,9 @@ The client renders **short Spanish** quiet notes from the status code (never the
 error state): 504 → "El asistente tardó demasiado…", 502/network → "No pude
 conectar con el asistente…", 503 → "El servidor no pudo generar audio…". A body
 `reset: true` (either endpoint) deletes the stored context for the incoming id
-and returns a fresh `conversation_id`; the "Nueva conversación" button clears
-the cookie client-side.
+and returns a fresh `conversation_id`; the cookie is HttpOnly (T0020), so the
+"Nueva conversación" button schedules `reset: true` on the next turn instead of
+touching the cookie from JS.
 
 ### 3.2 Latency budget
 
@@ -292,7 +293,7 @@ Per utterance: **local STT** (browser, no network) → **LLM** with a bounded
 timeout (`llm_timeout_ms`, default 30 s, passed to
 `BranchedLLM.Chat.send_message/3`; surfaced as `:llm_timeout` by BL-03) → **TTS**
 (server synthesis or browser playback). Replies are capped at
-`max_response_chars` (500) so TTS latency stays bounded. The client also
+`max_response_chars` (2000) so TTS latency stays bounded. The client also
 enforces its own bounds: a 15 s fetch timeout and a speaking watchdog
 (5–30 s by text length, or the server's `X-TTS-Duration-Ms` + 2 s in audio
 mode) so the UI can never stall (T0011/T0015).
@@ -323,7 +324,7 @@ display classes (a Tailwind `hidden` class silently beats the attribute).
 | `#voice-result`       | bottom transcript/error panel                    |
 | `#voice-error`, `#voice-transcript` | error vs transcript text           |
 | `#voice-send-status`  | non-blocking "Sending…"/quiet note under the transcript |
-| `#reset-conversation` | "Nueva conversación" button: clears the `soundai_conversation` cookie |
+| `#reset-conversation` | "Nueva conversación" button: schedules `reset: true` on the next transcript POST (the HttpOnly cookie cannot be cleared from JS) |
 
 Server default state: loading screen visible, record button hidden. JS takes
 over on boot (`start()` → `setState("loading")` → `preload()`).
@@ -567,6 +568,22 @@ mix precommit
   `ConversationAudioController` read `conn.cookies["soundai_conversation"]`.
   Body `conversation_id` takes precedence over the cookie; `reset: true`
   deletes the stored context and returns a fresh id.
+- **Cookie flags (T0020)**: the conversation cookie is defined once in
+  `SoundaiWeb.ConversationCookie` (`http_only: true`, `SameSite=Lax`,
+  one-week max-age, and `secure: true` derived from the endpoint's configured
+  URL scheme — production sets `scheme: "https"` even behind an SSL-terminating
+  proxy, where Plug's connection-scheme check would not fire). Never set this
+  cookie with raw `put_resp_cookie/4`; because it is HttpOnly, clients reset
+  via body `reset: true`, never by clearing the cookie. The `/settings`
+  cookies add `; Secure` client-side when on HTTPS.
+- **No secret material in source (T0020)**: the session signing salt lives in
+  config (`signing_salt:` under `config :soundai, SoundaiWeb.Endpoint`;
+  dev/test use a public throwaway fallback, production takes
+  `SOUNDAI_SIGNING_SALT` or derives one from `SECRET_KEY_BASE` in
+  `config/runtime.exs`). The endpoint resolves it at request time so release
+  builds pick up runtime values. Rotating it invalidates sessions — accepted.
+  `Phoenix.LiveDashboard.RequestLogger` is plugged only under
+  `code_reloading?`.
 - **LLM timeout budget**: every LLM call is bounded by `llm_timeout_ms`
   (default 30 s, `config :soundai, Soundai.Conversation`); a hang surfaces as
   `{:error, :llm_timeout}` → 504. The client adds its own 15 s fetch timeout

@@ -6,9 +6,7 @@ defmodule SoundaiWeb.TranscriptionController do
   use SoundaiWeb, :controller
 
   alias Soundai.Conversation.Store
-
-  @cookie_name "soundai_conversation"
-  @cookie_max_age 60 * 60 * 24 * 7
+  alias SoundaiWeb.ConversationCookie
 
   @doc """
   Receives a transcript produced by the browser-side Whisper STT.
@@ -24,11 +22,7 @@ defmodule SoundaiWeb.TranscriptionController do
     case Soundai.Conversation.submit_transcript(text, conversation_id, client_meta(params)) do
       {:ok, response, id} ->
         conn
-        |> put_resp_cookie(@cookie_name, id,
-          max_age: @cookie_max_age,
-          path: "/",
-          same_site: "Lax"
-        )
+        |> ConversationCookie.put(id)
         |> put_status(:created)
         |> json(%{
           ok: true,
@@ -65,7 +59,7 @@ defmodule SoundaiWeb.TranscriptionController do
   # stale cookie. Clients that can clear the cookie themselves don't need it.
   defp resolve_conversation_id(conn, params) do
     if Map.get(params, "reset") in [true, "true", "1"] do
-      stale = Map.get(params, "conversation_id") || conn.cookies[@cookie_name]
+      stale = Map.get(params, "conversation_id") || conn.cookies[ConversationCookie.name()]
 
       if is_binary(stale) do
         Store.delete(stale)
@@ -73,7 +67,7 @@ defmodule SoundaiWeb.TranscriptionController do
 
       nil
     else
-      Map.get(params, "conversation_id") || conn.cookies[@cookie_name]
+      Map.get(params, "conversation_id") || conn.cookies[ConversationCookie.name()]
     end
   end
 
