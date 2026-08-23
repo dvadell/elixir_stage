@@ -6,11 +6,20 @@
 // cached separately by Transformers.js in the browser's Cache Storage, so no
 // model requests are handled here (cross-origin requests are ignored).
 
-const CACHE_NAME = "soundai-shell-v3";
+const CACHE_NAME = "soundai-shell-v4";
 
 // Stable URLs that do not change between deployments. Digested assets
 // (app-<hash>.js etc.) are cached at runtime with stale-while-revalidate.
-const APP_SHELL = ["/assets/js/whisper_worker.js", "/assets/js/tts_worker.js", "/images/logo.svg", "/favicon.ico"];
+const APP_SHELL = [
+  "/manifest.webmanifest",
+  "/images/icon-192.png",
+  "/images/icon-512.png",
+  "/images/icon-maskable-512.png",
+  "/assets/js/whisper_worker.js",
+  "/assets/js/tts_worker.js",
+  "/images/logo.svg",
+  "/favicon.ico",
+];
 const NAV_PATHS = ["/", "/settings"];
 
 self.addEventListener("install", (event) => {
