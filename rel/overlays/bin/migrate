@@ -12,7 +12,9 @@ cd -P -- "$(dirname -- "$0")"
 exec ./elixir_stage eval '
 apps = [:soundai, :soundpanel]
 for app <- apps do
-  mod = Module.concat([app, :Release])
+  # :soundai must be camelized, or Module.concat yields "Elixir.soundai.Release"
+  camel = app |> Atom.to_string() |> Macro.camelize()
+  mod = Module.concat([camel, "Release"])
   if Code.ensure_loaded?(mod) do
     IO.puts("Migrating #{app}")
     apply(mod, :migrate, [])
