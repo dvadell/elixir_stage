@@ -134,7 +134,13 @@ BL-03 and surfaces as `:llm_timeout`.
 returning a `ReqLLM.Tool`; empty list disables them). The first tool is
 `Soundai.Conversation.Tools.Weather`: current weather via **Open-Meteo**
 (free, no API key) — geocoding + forecast, returning a short Spanish summary
-the assistant can speak. The tool accepts either a place `location` name
+the assistant can speak. An optional `date` (`YYYY-MM-DD`) switches it to that
+day's daily forecast (Open-Meteo daily aggregates: max/min temperature,
+apparent temperature, mean humidity, precipitation sum/probability, weather
+code, max wind; up to 16 days ahead, no past dates) so "¿qué tiempo hará
+mañana?" or "¿cómo va a estar la humedad el domingo próximo?" work — the LLM
+resolves relative dates with the browser clock relayed in the last message.
+The tool accepts either a place `location` name
 (geocoded) or numeric `latitude`/`longitude`, so the coordinates relayed in
 the last message make "¿qué tiempo hace aquí?" work without asking the user.
 Tool execution (detection, execution loop, result injection) is handled by
