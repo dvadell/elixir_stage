@@ -13,8 +13,8 @@ defmodule SoundaiWeb.NotesController do
     render(conn, :index, form: to_form(Notes.change_note(), as: :note))
   end
 
-  def create(conn, %{"note" => note_params}) do
-    case Notes.save_note(note_params) do
+  def create(conn, params) do
+    case Notes.save_note(Map.get(params, "note", %{})) do
       {:ok, _note} ->
         conn
         |> put_flash(:info, gettext("Nota guardada."))

@@ -51,7 +51,8 @@ defmodule ElixirStage.MixProject do
         "format",
         "credo --strict",
         "dialyzer",
-        ~S(cmd sh -c "MIX_ENV=test mix test --cover")
+        ~S(cmd sh -c "MIX_ENV=test mix test --cover"),
+        "excellent_migrations.check_safety"
       ]
     ]
   end

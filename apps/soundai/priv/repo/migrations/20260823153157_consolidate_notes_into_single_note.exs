@@ -8,6 +8,9 @@ defmodule Soundai.Repo.Migrations.ConsolidateNotesIntoSingleNote do
   """
 
   def up do
+    # One-off data consolidation in plain SQL (not expressible with the
+    # migration DSL), run once against PostgreSQL only.
+    # excellent_migrations:safety-assured-for-next-line raw_sql_executed
     execute """
     UPDATE notes AS target
     SET content = merged.content, updated_at = NOW()
@@ -18,6 +21,7 @@ defmodule Soundai.Repo.Migrations.ConsolidateNotesIntoSingleNote do
     WHERE target.id = merged.keep_id
     """
 
+    # excellent_migrations:safety-assured-for-next-line raw_sql_executed
     execute "DELETE FROM notes WHERE id <> (SELECT MIN(id) FROM notes)"
   end
 

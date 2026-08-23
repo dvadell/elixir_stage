@@ -47,5 +47,12 @@ defmodule SoundaiWeb.NotesControllerTest do
       assert html_response(conn, 422) =~ "Guardar"
       assert Notes.current_note() == nil
     end
+
+    test "re-renders the form instead of crashing when the note key is missing", %{conn: conn} do
+      conn = post(conn, ~p"/notes", %{})
+
+      assert html_response(conn, 422) =~ "Guardar"
+      assert Notes.current_note() == nil
+    end
   end
 end

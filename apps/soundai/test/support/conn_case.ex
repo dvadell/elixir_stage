@@ -25,10 +25,11 @@ defmodule SoundaiWeb.ConnCase do
     end
   end
 
-  setup _tags do
-    # Check out a sandbox connection so tests that touch the database are
-    # automatically rolled back after each test.
-    Sandbox.checkout(Soundai.Repo)
+  setup tags do
+    # Start a sandbox owner (shared for sync tests) so tests that touch the
+    # database are automatically rolled back after each test.
+    pid = Sandbox.start_owner!(Soundai.Repo, shared: not tags[:async])
+    on_exit(fn -> Sandbox.stop_owner(pid) end)
 
     {:ok, conn: Phoenix.ConnTest.build_conn()}
   end

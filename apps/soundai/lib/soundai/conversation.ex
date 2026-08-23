@@ -181,8 +181,9 @@ defmodule Soundai.Conversation do
     end
   end
 
-  # Reading the note is best-effort: a database failure must never break the
-  # conversation path, so the error travels back explicitly instead of raising.
+  # Reading the note is best-effort: the rescue is intentionally broad because
+  # a voice turn must never crash over missing notes. That also masks
+  # non-database bugs here, so failures are always logged at warning level.
   defp prompt_notes do
     {:ok, Notes.note_text()}
   rescue
