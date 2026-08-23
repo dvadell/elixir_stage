@@ -20,6 +20,8 @@ defmodule SoundaiWeb.Router do
 
     get "/", HomeController, :index
     get "/settings", SettingsController, :index
+    get "/notas", NotesController, :index
+    post "/notas", NotesController, :create
     get "/notes", NotesController, :index
     post "/notes", NotesController, :create
   end
