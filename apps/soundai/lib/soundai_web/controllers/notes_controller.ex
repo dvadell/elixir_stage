@@ -10,11 +10,11 @@ defmodule SoundaiWeb.NotesController do
   defp to_form(changeset, opts), do: Phoenix.Component.to_form(changeset, opts)
 
   def index(conn, _params) do
-    render(conn, :index, form: to_form(Notes.changeset(%Notes.Note{}, %{}), as: :note))
+    render(conn, :index, form: to_form(Notes.change_note(), as: :note))
   end
 
   def create(conn, %{"note" => note_params}) do
-    case Notes.create_note(note_params) do
+    case Notes.save_note(note_params) do
       {:ok, _note} ->
         conn
         |> put_flash(:info, gettext("Nota guardada."))

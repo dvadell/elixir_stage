@@ -3,7 +3,11 @@
 # credo:disable-for-this-file OeditusCredo.Check.Security.MissingAuthorization
 defmodule Soundai.Notes do
   @moduledoc """
-  Persistence for freeform text notes.
+  The user's single, freely editable note — one big text maintained through
+  `/notes` and relayed verbatim to the LLM on every turn.
+
+  Stored as one row in the `notes` table: saving replaces its content in
+  place; the first save creates the row.
   """
 
   import Ecto.Query, warn: false
@@ -14,21 +18,43 @@ defmodule Soundai.Notes do
 
   @max_content_length 10_000
 
-  defdelegate changeset(note, attrs), to: Note
+  @doc """
+  The current note (`%Note{}`), or `nil` when it has never been saved.
+  """
+  def current_note do
+    Repo.one(from(n in Note, order_by: [asc: n.id], limit: 1))
+  end
 
   @doc """
-  Creates a note from freeform text.
+  Changeset backing the edit form, prefilled with the current text.
+  """
+  def change_note do
+    Note.changeset(current_note() || %Note{}, %{})
+  end
+
+  @doc """
+  Replaces the whole note text: updates the existing row, or creates it on
+  first save.
 
   ## Returns
 
     * `{:ok, note}` — the persisted note.
     * `{:error, %Ecto.Changeset{}}` — validation failure (empty or blank).
   """
-  def create_note(attrs) do
-    %Note{}
-    |> Note.changeset(attrs)
-    |> validate_length()
-    |> Repo.insert()
+  def save_note(attrs) do
+    case current_note() do
+      nil ->
+        %Note{}
+        |> Note.changeset(attrs)
+        |> validate_length()
+        |> Repo.insert()
+
+      note ->
+        note
+        |> Note.changeset(attrs)
+        |> validate_length()
+        |> Repo.update()
+    end
   end
 
   # Freeform notes: cap the stored size so a runaway paste cannot flood the
@@ -38,9 +64,12 @@ defmodule Soundai.Notes do
   end
 
   @doc """
-  Lists all notes, newest first.
+  The current note's text, or `nil` when there is none.
   """
-  def list_notes do
-    Repo.all(from(n in Note, order_by: [desc: n.inserted_at, desc: n.id]))
+  def note_text do
+    case current_note() do
+      nil -> nil
+      note -> note.content
+    end
   end
 end

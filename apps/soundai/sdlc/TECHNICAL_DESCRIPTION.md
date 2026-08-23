@@ -101,8 +101,19 @@ the *last message* instead, prefixed to the transcript as a bracketed block:
 ```text
 [Fecha y hora actual: sábado 22 de agosto de 2026, 14:35 (Europe/Madrid). Ubicación aproximada del usuario: latitud 40,4168, longitud -3,7038 (coordenadas GPS).]
 
+[Notas del usuario:
+segunda nota
+primera nota]
+
 <transcript>
 ```
+
+The user's note — one big, freely editable text maintained through `/notes` —
+rides along in its own bracketed block on every turn, so questions like
+"¿qué notas tengo?" work without any tool call. It is included verbatim and
+uncapped; saving through `/notes` replaces the whole text in place (a single
+row, consolidated by the `consolidate_notes_into_single_note` migration). A
+database failure is logged and the message simply goes out without notes.
 
 The date and time come from the **browser's clock** (`date` "YYYY-MM-DD",
 `time` "HH:MM:SS", plus its IANA `timezone` name) — never from the server.
@@ -586,11 +597,13 @@ mix precommit
   so debugging sees exactly what the model produced.
 - **Dynamic context rides in the last message, not the system prompt**: on
   every turn `Soundai.Conversation` prefixes the transcript with a bracketed
-  block (browser-supplied date/time + optional user coordinates) and leaves
-  the stored system message untouched. Client-supplied meta (`date`, `time`,
-  `timezone`, `latitude`, `longitude`) is untrusted input: values that fail
-  validation are dropped silently — never rejected as 422. The clock source
-  is always the browser; there is no server-side time fallback.
+  block (browser-supplied date/time + optional user coordinates) plus, when
+  it exists, a second block with the user's single editable note
+  (`Soundai.Notes`) — and leaves the stored system message untouched.
+  Client-supplied meta (`date`, `time`, `timezone`, `latitude`, `longitude`)
+  is untrusted input: values that fail validation are dropped silently —
+  never rejected as 422. The clock source is always the browser; there is no
+  server-side time fallback.
 
 ## 13. TTS benchmarks (T0008)
 

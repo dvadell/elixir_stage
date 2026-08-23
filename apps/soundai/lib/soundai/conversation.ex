@@ -10,8 +10,9 @@ defmodule Soundai.Conversation do
 
   The system prompt stays exactly as configured. Dynamic context rides in the
   **last message** instead, prefixed to the transcript: the browser's own local
-  date and time (the clock never depends on the server) and, when shared, the
-  user's approximate geolocation. Invalid values are dropped silently.
+  date and time (the clock never depends on the server), when shared the user's
+  approximate geolocation, and the notes saved through `/notes`
+  (`Soundai.Notes`). Invalid values are dropped silently.
 
   Configuration lives under `config :soundai, Soundai.Conversation`:
 
@@ -33,6 +34,7 @@ defmodule Soundai.Conversation do
   require Logger
 
   alias Soundai.Conversation.{LLM, SpeechText, Store, Tools.Weather}
+  alias Soundai.Notes
 
   @max_text_length 4000
 
@@ -145,20 +147,48 @@ defmodule Soundai.Conversation do
   # ------------------------------------------------------------- last message
 
   # The transcript prefixed with a bracketed context block (browser-supplied
-  # date/time and optional user location). The system prompt is never touched:
-  # the block travels inside this one message only.
+  # date/time, optional user location and the saved notes). The system prompt
+  # is never touched: the blocks travel inside this one message only.
   defp build_message(text, meta) do
-    case context_lines(meta) do
-      [] ->
-        text
+    iodata =
+      case context_lines(meta) do
+        [] ->
+          [notes_block(), text]
 
-      lines ->
-        IO.iodata_to_binary(["[", Enum.intersperse(lines, " "), "]\n\n", text])
-    end
+        lines ->
+          [["[", Enum.intersperse(lines, " "), "]\n\n"], notes_block(), text]
+      end
+
+    IO.iodata_to_binary(iodata)
   end
 
   defp context_lines(meta) do
     Enum.reject([datetime_line(meta), location_line(meta)], &is_nil/1)
+  end
+
+  # Bracketed block with the user's note — one big, freely editable text
+  # maintained through /notes — so the LLM can answer questions about it;
+  # `[]` when there is none. It is included verbatim and uncapped. A database
+  # failure never breaks the conversation path: it is logged and the message
+  # simply goes out without notes.
+  defp notes_block do
+    case prompt_notes() do
+      {:ok, text} when is_binary(text) ->
+        ["[Notas del usuario:\n", text, "]\n\n"]
+
+      _no_note_or_error ->
+        []
+    end
+  end
+
+  # Reading the note is best-effort: a database failure must never break the
+  # conversation path, so the error travels back explicitly instead of raising.
+  defp prompt_notes do
+    {:ok, Notes.note_text()}
+  rescue
+    exception ->
+      Logger.warning("Could not load notes for the LLM message: #{Exception.message(exception)}")
+      {:error, exception}
   end
 
   # "Fecha y hora actual: viernes 22 de agosto de 2026, 14:35 (Europe/Madrid)."
