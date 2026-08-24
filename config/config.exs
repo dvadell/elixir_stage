@@ -63,8 +63,6 @@ config :branched_llm, :providers,
 # `:llm_tools` lists modules exposing tool/0 (ReqLLM.Tool) offered to the LLM
 # on every turn; set it to [] to disable tools.
 config :soundai, Soundai.Conversation,
-  system_prompt:
-    "Eres un asistente de voz amable y directo. Respondes en español, de forma breve y natural, como en una conversación hablada, sin listas ni encabezados.",
   llm_timeout_ms: 30_000,
   max_response_chars: 500,
   store_ttl_ms: 30 * 60 * 1000,
