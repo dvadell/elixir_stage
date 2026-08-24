@@ -41,7 +41,7 @@ config :soundai, SoundaiWeb.Gettext, default_locale: "es"
 # the configured path. Override with e.g. SOUNDAI_TTS_MODEL_PATH in runtime.exs.
 config :soundai, Soundai.TTS,
   model_path: "tts/model.onnx",
-  max_text_length: 1000
+  max_text_length: 10000
 
 # LLM conversation manager (branched_llm). req_llm has no :nvidia provider, so
 # the NVIDIA OpenAI-compatible endpoint is reached through the :openai provider
