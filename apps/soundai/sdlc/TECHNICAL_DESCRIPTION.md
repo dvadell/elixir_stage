@@ -154,6 +154,15 @@ resolves relative dates with the browser clock relayed in the last message.
 The tool accepts either a place `location` name
 (geocoded) or numeric `latitude`/`longitude`, so the coordinates relayed in
 the last message make "¿qué tiempo hace aquí?" work without asking the user.
+Two more tools turn the assistant into a **family answering machine**
+(T0039): `Soundai.Conversation.Tools.SaveMessage` (`save_message`) stores a
+message for someone in the `messages` table via `Soundai.Messages`, and
+`Soundai.Conversation.Tools.GetMessages` (`get_messages`) reads out the
+pending ones and stamps them `delivered_at`. Both return ready-to-speak
+Spanish scripts the assistant repeats verbatim (relay, not rephrasing);
+names are free text matched best-effort (downcased, accents stripped);
+playback is capped at 5 per call with a "…queda(n) N más" tail. Messages are
+communal by design — no authentication, anyone may hear anything.
 Tool execution (detection, execution loop, result injection) is handled by
 branched_llm's orchestrator inside the same `send_message/3` call; tool HTTP
 calls are bounded (`:timeout_ms`, 5 s) so a slow provider cannot eat the whole
@@ -207,8 +216,15 @@ apps/soundai/
 │   │   ├── llm.ex                 default LLM adapter -> BranchedLLM.Chat.send_message/3
 │   │   ├── speech_text.ex         Markdown/emoji -> plain speakable text (SpeechText.clean/1)
 │   │   ├── store.ex               per-conversation context store (GenServer, idle TTL)
-│   │   └── tools/weather.ex       first LLM tool: get_weather (Open-Meteo, free)
+│   │   └── tools/
+│   │       ├── weather.ex         get_weather (Open-Meteo, free)
+│   │       ├── save_message.ex    save_message (answering machine)
+│   │       └── get_messages.ex    get_messages (plays pending, marks delivered)
 │   ├── mailer.ex
+│   ├── messages.ex                answering-machine context: save/pending/
+│   │                               mark_delivered, best-effort name matching
+│   ├── messages/message.ex        Message schema (body, from/to names,
+│   │                               delivered_at; byte caps in the changeset)
 │   └── tts/
 │       ├── tts.ex                 server-side TTS seam: synthesize/2 (Ortex)
 │       ├── tts/ortex_server.ex    GenServer owning the ONNX session (serialized calls)
@@ -237,7 +253,8 @@ apps/soundai/
 ├── sdlc/tickets/                   active epic (EPIC_LLM.md, next tickets)
 │   └── done/                       implemented tickets T0002.md–T0017.md
 └── test/
-    ├── soundai/                    unit tests (conversation, tts, vits_tokenizer, wav)
+    ├── soundai/                    unit tests (conversation, messages, tts,
+    │                               vits_tokenizer, wav, llm tools)
     ├── soundai_web/controllers/    controller tests (home, settings, transcriptions,
     │                               conversation_audio, tts)
     └── support/                    tts_fake_adapter.ex, conversation_fake_adapter.ex

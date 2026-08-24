@@ -66,7 +66,11 @@ config :soundai, Soundai.Conversation,
   llm_timeout_ms: 30_000,
   max_response_chars: 500,
   store_ttl_ms: 30 * 60 * 1000,
-  llm_tools: [Soundai.Conversation.Tools.Weather]
+  llm_tools: [
+    Soundai.Conversation.Tools.Weather,
+    Soundai.Conversation.Tools.SaveMessage,
+    Soundai.Conversation.Tools.GetMessages
+  ]
 
 # Weather LLM tool (Open-Meteo, free, no API key). HTTP calls are bounded so a
 # slow provider cannot eat the whole LLM reply budget; override with SOUNDAI_…
