@@ -27,12 +27,40 @@ defmodule Soundai.Conversation.Tools.GetMessagesTest do
                GetMessages.get_messages(%{"from" => "Diego", "to" => "Mamá"})
     end
 
-    test "plays a single message and marks it delivered" do
+    test "plays a single message, marks it delivered, and replays within the grace window" do
       {:ok, _} = Messages.save_message(%{"body" => "toma agua", "from_name" => "Diego"})
 
       assert {:ok, "Tienes un mensaje nuevo. De Diego: toma agua"} = GetMessages.get_messages(%{})
 
-      assert Messages.pending_messages() == []
+      # a play that never reached the speaker must not eat the message: an
+      # immediate re-ask replays it instead of claiming an empty inbox
+      assert {:ok, script} = GetMessages.get_messages(%{})
+      assert script =~ "toma agua"
+    end
+
+    test "stops replaying a message delivered before the grace window" do
+      {:ok, played} = Messages.save_message(%{"body" => "toma agua"})
+      {:ok, _} = GetMessages.get_messages(%{})
+      stamp_delivered_before_grace(played)
+
+      assert {:ok, "No tienes mensajes nuevos."} = GetMessages.get_messages(%{})
+    end
+
+    test "a strictly pending message takes precedence over a just-played one" do
+      {:ok, _} = Messages.save_message(%{"body" => "ya escuchado"})
+      {:ok, _} = GetMessages.get_messages(%{})
+
+      # a new message arrives after the playback: asking again must advance
+      # the tape instead of repeating the just-played one
+      {:ok, _} = Messages.save_message(%{"body" => "recién llegado", "from_name" => "Mamá"})
+
+      assert {:ok, script} = GetMessages.get_messages(%{})
+      assert script =~ "De Mamá: recién llegado"
+      refute script =~ "ya escuchado"
+
+      # only now, with the tape exhausted, does the just-played one come back
+      assert {:ok, replay_script} = GetMessages.get_messages(%{})
+      assert replay_script =~ "De alguien: ya escuchado"
     end
 
     test "plays several messages oldest first, in plural" do
@@ -44,7 +72,8 @@ defmodule Soundai.Conversation.Tools.GetMessagesTest do
       assert script ==
                "Tienes 2 mensajes nuevos. De Diego: primero De Mamá: segundo"
 
-      assert Messages.pending_messages() == []
+      # the tape is empty of strict pending, so the just-played pair replays
+      assert [%{body: "primero"}, %{body: "segundo"}] = Messages.pending_messages()
     end
 
     test "says 'de alguien' for an unknown sender" do
@@ -94,5 +123,19 @@ defmodule Soundai.Conversation.Tools.GetMessagesTest do
       assert second_script =~ "mensaje 7"
       refute second_script =~ "más."
     end
+  end
+
+  # Marks a message delivered outside the replay grace window, simulating a
+  # play that happened long ago (mark_delivered/1 always stamps "now").
+  defp stamp_delivered_before_grace(message) do
+    delivered_at =
+      DateTime.utc_now()
+      |> DateTime.add(-3600, :second)
+      |> DateTime.truncate(:second)
+
+    Repo.update_all(
+      from(m in Soundai.Messages.Message, where: m.id == ^message.id),
+      set: [delivered_at: delivered_at]
+    )
   end
 end

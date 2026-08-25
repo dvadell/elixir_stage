@@ -77,6 +77,12 @@ config :soundai, Soundai.Conversation,
 # style env vars in runtime.exs if ever needed.
 config :soundai, Soundai.Conversation.Tools.Weather, timeout_ms: 5_000
 
+# Messages (the family answering machine). `:delivery_grace_seconds` keeps a
+# just-played message replayable for this long, so a play that never reached
+# the speaker (lost tool result, double tool call) is read again on the next
+# ask instead of being silently consumed. 0 disables the replay tier.
+config :soundai, Soundai.Messages, delivery_grace_seconds: 120
+
 # Configure the endpoint
 config :soundai, SoundaiWeb.Endpoint,
   url: [host: "localhost"],

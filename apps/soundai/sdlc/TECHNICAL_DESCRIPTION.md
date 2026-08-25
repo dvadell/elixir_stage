@@ -161,7 +161,11 @@ message for someone in the `messages` table via `Soundai.Messages`, and
 pending ones and stamps them `delivered_at`. Both return ready-to-speak
 Spanish scripts the assistant repeats verbatim (relay, not rephrasing);
 names are free text matched best-effort (downcased, accents stripped);
-playback is capped at 5 per call with a "…queda(n) N más" tail. Messages are
+playback is capped at 5 per call with a "…queda(n) N más" tail. Delivery is
+soft: a just-played message stays replayable for `:delivery_grace_seconds`
+(120 by default) whenever nothing strictly pending matches, so a play that
+never reached the speaker (lost tool result, double tool call) is read again
+on the next ask instead of being silently consumed. Messages are
 communal by design — no authentication, anyone may hear anything.
 Tool execution (detection, execution loop, result injection) is handled by
 branched_llm's orchestrator inside the same `send_message/3` call; tool HTTP

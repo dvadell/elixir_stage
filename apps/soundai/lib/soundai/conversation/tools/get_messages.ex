@@ -14,8 +14,13 @@ defmodule Soundai.Conversation.Tools.GetMessages do
 
   Playback is bounded: at most #{@max_played} messages per call, oldest first,
   with a "…y queda(n) N más" tail; the rest stay pending for the next ask.
-  Failures return `{:error, reason}` so `branched_llm` injects the error into
-  the conversation context and the LLM can apologize in plain words.
+  Played messages are stamped delivered, but they stay replayable for a short
+  grace window (`Soundai.Messages` `:delivery_grace_seconds`): a play that
+  never reached the speaker (lost tool result, double call) is read again on
+  the next ask instead of being silently consumed. Strictly pending messages
+  always take precedence — asking again right after a playback advances the
+  tape. Failures return `{:error, reason}` so `branched_llm` injects the error
+  into the conversation context and the LLM can apologize in plain words.
   """
 
   require Logger

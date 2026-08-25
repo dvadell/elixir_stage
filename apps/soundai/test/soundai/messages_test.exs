@@ -90,8 +90,26 @@ defmodule Soundai.MessagesTest do
 
       Messages.mark_delivered([Repo.get!(Message, played.id)])
 
+      # strictly pending messages win; a just-played one only replays when
+      # nothing strictly pending matches (see the grace-window tests below)
       assert [%{id: id}] = Messages.pending_messages()
       assert id == pending.id
+    end
+
+    test "a message delivered within the grace window is still replayable" do
+      {:ok, played} = Messages.save_message(%{"body" => "recién jugado"})
+      Messages.mark_delivered([Repo.get!(Message, played.id)])
+
+      assert [%{id: id, delivered_at: %DateTime{}}] = Messages.pending_messages()
+      assert id == played.id
+    end
+
+    test "a message delivered before the grace window is gone" do
+      {:ok, played} = Messages.save_message(%{"body" => "antiguo"})
+
+      stamp_delivered(played, hours_ago: 1)
+
+      assert [] = Messages.pending_messages()
     end
 
     test "is empty with no messages" do
@@ -162,11 +180,24 @@ defmodule Soundai.MessagesTest do
       assert %DateTime{} = reloaded_one.delivered_at
       assert DateTime.compare(reloaded_two.delivered_at, reloaded_one.delivered_at) == :eq
 
-      assert Messages.pending_messages() == []
+      # both are still within the grace window, so they stay replayable
+      assert [replayed_one, replayed_two] = Messages.pending_messages()
+      assert replayed_one.id == one.id
+      assert replayed_two.id == two.id
     end
 
     test "accepts an empty list" do
       assert {0, nil} = Messages.mark_delivered([])
     end
+  end
+
+  # Stamps an explicit delivered_at in the past; mark_delivered/1 always uses
+  # "now", which would land inside the replay grace window.
+  defp stamp_delivered(message, hours_ago: hours) do
+    delivered_at = DateTime.add(DateTime.utc_now(), -hours * 3600, :second)
+
+    Repo.update_all(from(m in Message, where: m.id == ^message.id),
+      set: [delivered_at: DateTime.truncate(delivered_at, :second)]
+    )
   end
 end

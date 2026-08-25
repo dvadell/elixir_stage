@@ -4,6 +4,7 @@
 # credo:disable-for-this-file OeditusCredo.Check.Security.MissingAuthorization
 defmodule Soundai.Messages do
   @max_pending_scan 200
+  @default_delivery_grace_seconds 120
 
   @moduledoc """
   The family answering machine: short voice messages saved by one person and
@@ -13,6 +14,11 @@ defmodule Soundai.Messages do
   are free text extracted from speech, and matching is case- and
   accent-insensitive ("MAMÁ" finds a message addressed to "Mamá"). Rows are
   kept forever; playing stamps `delivered_at` instead of deleting.
+
+  Delivery is soft: a just-played message stays replayable during a short
+  grace window (`:delivery_grace_seconds`, default #{@default_delivery_grace_seconds}s),
+  so a play that somehow never reached the speaker is read again on the next
+  ask instead of being silently consumed. See `pending_messages/1`.
   """
 
   import Ecto.Query, warn: false
@@ -53,23 +59,81 @@ defmodule Soundai.Messages do
   pending set normally prunes itself when people play their messages, so the
   cap only guards a pathological never-played backlog (the tape overflows
   FIFO-style).
+
+  ## Delivery grace window
+
+  Messages come back in two tiers. First, strictly pending ones
+  (`delivered_at` is NULL) — asking again right after a playback advances the
+  tape instead of repeating it. Only when no strict pending message matches
+  do messages delivered within the last `:delivery_grace_seconds` (config
+  under `Soundai.Messages`, default #{@default_delivery_grace_seconds}) come
+  back, oldest first: a play that never reached the speaker (a lost tool
+  result, a double tool call, a TTS hiccup) must not eat the message — the
+  next ask replays it rather than claiming an empty inbox. A zero or negative
+  grace disables the replay tier.
   """
   @spec pending_messages(keyword()) :: [Message.t()]
   def pending_messages(opts \\ []) do
-    from_name = opts[:from]
-    to_name = opts[:to]
+    # Plain calls, not pipes: OeditusCredo's MissingPreload heuristic flags
+    # `|> Repo.all()` (there are no associations to preload on Message).
+    strict = Repo.all(pending_query(opts, nil))
+    strict_messages = matching(strict, opts)
 
+    case strict_messages do
+      [] ->
+        recent = Repo.all(pending_query(opts, delivery_grace_cutoff()))
+        matching(recent, opts)
+
+      messages ->
+        messages
+    end
+  end
+
+  # Strictly pending when `cutoff` is nil; otherwise also recently delivered.
+  # The name filters are applied after the fetch (see `matching/2`).
+  defp pending_query(_opts, cutoff) do
     # No associations exist on Message, so there is nothing to preload.
-    query =
+    if cutoff do
+      from(m in Message,
+        where: is_nil(m.delivered_at) or m.delivered_at > ^cutoff,
+        order_by: [asc: m.id],
+        limit: ^@max_pending_scan
+      )
+    else
       from(m in Message,
         where: is_nil(m.delivered_at),
         order_by: [asc: m.id],
         limit: ^@max_pending_scan
       )
+    end
+  end
 
-    Enum.filter(Repo.all(query), fn message ->
-      from_matches?(message.from_name, from_name) and to_matches?(message.to_name, to_name)
+  # Best-effort name matching over a fetched batch (see the filter semantics
+  # in the `pending_messages/1` doc).
+  defp matching(messages, opts) do
+    Enum.filter(messages, fn message ->
+      from_matches?(message.from_name, opts[:from]) and
+        to_matches?(message.to_name, opts[:to])
     end)
+  end
+
+  defp delivery_grace_cutoff do
+    seconds = delivery_grace_seconds()
+
+    if seconds > 0 do
+      DateTime.utc_now()
+      |> DateTime.add(-seconds, :second)
+      |> DateTime.truncate(:second)
+    else
+      # A non-positive grace disables the replay tier entirely.
+      DateTime.add(DateTime.utc_now(), 1, :second) |> DateTime.truncate(:second)
+    end
+  end
+
+  defp delivery_grace_seconds do
+    :soundai
+    |> Application.get_env(__MODULE__, [])
+    |> Keyword.get(:delivery_grace_seconds, @default_delivery_grace_seconds)
   end
 
   # No `:from` filter passes everything; a named one requires an equal sender.
