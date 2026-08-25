@@ -3,8 +3,8 @@
 # missing-authorization heuristic.
 # credo:disable-for-this-file OeditusCredo.Check.Security.MissingAuthorization
 defmodule Soundai.Messages do
-  @max_pending_scan 200
-  @default_delivery_grace_seconds 120
+  @default_max_messages 5
+  @default_retention_days 30
 
   @moduledoc """
   The family answering machine: short voice messages saved by one person and
@@ -12,13 +12,21 @@ defmodule Soundai.Messages do
 
   Deliberately communal and best-effort — there are no user accounts, names
   are free text extracted from speech, and matching is case- and
-  accent-insensitive ("MAMÁ" finds a message addressed to "Mamá"). Rows are
-  kept forever; playing stamps `delivered_at` instead of deleting.
+  accent-insensitive ("MAMÁ" finds a message addressed to "Mamá").
 
-  Delivery is soft: a just-played message stays replayable during a short
-  grace window (`:delivery_grace_seconds`, default #{@default_delivery_grace_seconds}s),
-  so a play that somehow never reached the speaker is read again on the next
-  ask instead of being silently consumed. See `pending_messages/1`.
+  Playback works like a 90s contestador: asking reads out the **last
+  `:max_messages`** messages that are **not older than
+  `:message_retention_days`**, oldest first among those selected. Nothing is
+  ever deleted or marked as delivered — rows stay forever and visibility
+  depends only on insertion age, so a message is always available again on
+  the next ask until it ages out of the retention window.
+
+  Configuration under `config :soundai, Soundai.Messages`:
+
+    * `:max_messages` — how many of the most recent messages to return
+      (default #{@default_max_messages}).
+    * `:message_retention_days` — how many days a message stays visible
+      (default #{@default_retention_days}).
   """
 
   import Ecto.Query, warn: false
@@ -27,7 +35,7 @@ defmodule Soundai.Messages do
   alias Soundai.Repo
 
   @doc """
-  Saves a message (`%{"body" => …, "from_name" => …, "to_name" => …}).
+  Saves a message (`%{"body" => …, "from_name" => …, "to_name" => …}`).
 
   ## Returns
 
@@ -41,12 +49,15 @@ defmodule Soundai.Messages do
   end
 
   @doc """
-  All pending messages, oldest first (the order they were left on the tape).
+  The last `:max_messages` messages within the `:message_retention_days`
+  window, ordered as they were left on the tape (oldest first).
 
   ## Options
 
     * `:from` — only messages left by this name (best-effort match).
     * `:to` — only messages addressed to this name (best-effort match).
+    * `:max_messages` / `:retention_days` — per-call overrides of the
+      configured values.
 
   Filter semantics follow answering-machine intuition: an unknown sender
   (NULL) never matches a named `:from` filter — "dime el mensaje de Diego"
@@ -54,58 +65,26 @@ defmodule Soundai.Messages do
   everyone, so it always passes a `:to` filter and someone asking as "Diego"
   still hears the general notes. A non-binary filter value is treated as a
   named filter that matches nothing, never silently dropped.
-
-  Only the oldest #{@max_pending_scan} pending messages are considered: the
-  pending set normally prunes itself when people play their messages, so the
-  cap only guards a pathological never-played backlog (the tape overflows
-  FIFO-style).
-
-  ## Delivery grace window
-
-  Messages come back in two tiers. First, strictly pending ones
-  (`delivered_at` is NULL) — asking again right after a playback advances the
-  tape instead of repeating it. Only when no strict pending message matches
-  do messages delivered within the last `:delivery_grace_seconds` (config
-  under `Soundai.Messages`, default #{@default_delivery_grace_seconds}) come
-  back, oldest first: a play that never reached the speaker (a lost tool
-  result, a double tool call, a TTS hiccup) must not eat the message — the
-  next ask replays it rather than claiming an empty inbox. A zero or negative
-  grace disables the replay tier.
   """
   @spec pending_messages(keyword()) :: [Message.t()]
   def pending_messages(opts \\ []) do
-    # Plain calls, not pipes: OeditusCredo's MissingPreload heuristic flags
-    # `|> Repo.all()` (there are no associations to preload on Message).
-    strict = Repo.all(pending_query(opts, nil))
-    strict_messages = matching(strict, opts)
+    cutoff = DateTime.add(DateTime.utc_now(), -retention_days(opts), :day)
 
-    case strict_messages do
-      [] ->
-        recent = Repo.all(pending_query(opts, delivery_grace_cutoff()))
-        matching(recent, opts)
-
-      messages ->
-        messages
-    end
-  end
-
-  # Strictly pending when `cutoff` is nil; otherwise also recently delivered.
-  # The name filters are applied after the fetch (see `matching/2`).
-  defp pending_query(_opts, cutoff) do
-    # No associations exist on Message, so there is nothing to preload.
-    if cutoff do
-      from(m in Message,
-        where: is_nil(m.delivered_at) or m.delivered_at > ^cutoff,
-        order_by: [asc: m.id],
-        limit: ^@max_pending_scan
+    # Newest first with an id tiebreaker (same-second inserts), limited to
+    # the configured maximum, then reversed to speak them chronologically.
+    # Plain call, not a pipe into Repo.all: OeditusCredo's MissingPreload
+    # heuristic flags the pipe (there are no associations to preload).
+    selected =
+      Repo.all(
+        from(m in Message,
+          where: m.inserted_at > ^cutoff,
+          order_by: [desc: m.inserted_at, desc: m.id],
+          limit: ^max_messages(opts)
+        )
       )
-    else
-      from(m in Message,
-        where: is_nil(m.delivered_at),
-        order_by: [asc: m.id],
-        limit: ^@max_pending_scan
-      )
-    end
+      |> Enum.reverse()
+
+    matching(selected, opts)
   end
 
   # Best-effort name matching over a fetched batch (see the filter semantics
@@ -115,25 +94,6 @@ defmodule Soundai.Messages do
       from_matches?(message.from_name, opts[:from]) and
         to_matches?(message.to_name, opts[:to])
     end)
-  end
-
-  defp delivery_grace_cutoff do
-    seconds = delivery_grace_seconds()
-
-    if seconds > 0 do
-      DateTime.utc_now()
-      |> DateTime.add(-seconds, :second)
-      |> DateTime.truncate(:second)
-    else
-      # A non-positive grace disables the replay tier entirely.
-      DateTime.add(DateTime.utc_now(), 1, :second) |> DateTime.truncate(:second)
-    end
-  end
-
-  defp delivery_grace_seconds do
-    :soundai
-    |> Application.get_env(__MODULE__, [])
-    |> Keyword.get(:delivery_grace_seconds, @default_delivery_grace_seconds)
   end
 
   # No `:from` filter passes everything; a named one requires an equal sender.
@@ -157,19 +117,6 @@ defmodule Soundai.Messages do
 
   defp to_matches?(_, _), do: false
 
-  @doc """
-  Stamps `delivered_at` on the given messages (the ones that were just played).
-  Returns `{count, nil}` like `Repo.update_all/2`.
-  """
-  @spec mark_delivered([Message.t()]) :: {non_neg_integer(), nil}
-  def mark_delivered(messages) do
-    ids = Enum.map(messages, & &1.id)
-
-    now = DateTime.utc_now() |> DateTime.truncate(:second)
-
-    Repo.update_all(from(m in Message, where: m.id in ^ids), set: [delivered_at: now])
-  end
-
   # Downcase + strip diacritics + collapse whitespace so spoken-name variants
   # still match. Only ever called with binaries (the matches predicates gate
   # on is_binary before comparing).
@@ -180,5 +127,21 @@ defmodule Soundai.Messages do
     |> String.normalize(:nfd)
     |> String.replace(~r/[\x{0300}-\x{036F}]/u, "")
     |> String.replace(~r/\s+/u, " ")
+  end
+
+  # ------------------------------------------------------- configuration
+
+  defp max_messages(opts) do
+    opts[:max_messages] || configured(:max_messages) || @default_max_messages
+  end
+
+  defp retention_days(opts) do
+    opts[:retention_days] || configured(:message_retention_days) || @default_retention_days
+  end
+
+  defp configured(key) do
+    :soundai
+    |> Application.get_env(__MODULE__, [])
+    |> Keyword.get(key)
   end
 end

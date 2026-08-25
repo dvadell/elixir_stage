@@ -2,7 +2,6 @@ defmodule Soundai.MessagesTest do
   use Soundai.DataCase, async: true
 
   alias Soundai.Messages
-  alias Soundai.Messages.Message
 
   describe "save_message/1" do
     test "persists body, sender and recipient" do
@@ -16,7 +15,6 @@ defmodule Soundai.MessagesTest do
       assert message.body == "no te olvides de tomar agua hoy"
       assert message.from_name == "Mamá"
       assert message.to_name == "Diego"
-      assert message.delivered_at == nil
     end
 
     test "trims the body and the names" do
@@ -75,41 +73,49 @@ defmodule Soundai.MessagesTest do
   end
 
   describe "pending_messages/0" do
-    test "returns undelivered messages oldest first" do
-      {:ok, first} = Messages.save_message(%{"body" => "primero"})
-      {:ok, second} = Messages.save_message(%{"body" => "segundo"})
+    test "returns messages within the retention window oldest first" do
+      {:ok, _} = Messages.save_message(%{"body" => "primero"})
+      {:ok, _} = Messages.save_message(%{"body" => "segundo"})
 
-      assert [%{id: id1}, %{id: id2}] = Messages.pending_messages()
-      assert id1 == first.id
-      assert id2 == second.id
+      assert [%{body: "primero"}, %{body: "segundo"}] = Messages.pending_messages()
     end
 
-    test "excludes delivered messages" do
-      {:ok, played} = Messages.save_message(%{"body" => "ya escuchado"})
-      {:ok, pending} = Messages.save_message(%{"body" => "pendiente"})
+    test "returns at most the configured number of messages, keeping the most recent" do
+      for n <- 1..7 do
+        {:ok, _} = Messages.save_message(%{"body" => "mensaje #{n}"})
+      end
 
-      Messages.mark_delivered([Repo.get!(Message, played.id)])
+      bodies = Enum.map(Messages.pending_messages(), & &1.body)
 
-      # strictly pending messages win; a just-played one only replays when
-      # nothing strictly pending matches (see the grace-window tests below)
-      assert [%{id: id}] = Messages.pending_messages()
-      assert id == pending.id
+      # the tape plays backwards-trimmed: the LAST max_messages (default 5),
+      # spoken chronologically
+      assert bodies == ["mensaje 3", "mensaje 4", "mensaje 5", "mensaje 6", "mensaje 7"]
     end
 
-    test "a message delivered within the grace window is still replayable" do
-      {:ok, played} = Messages.save_message(%{"body" => "recién jugado"})
-      Messages.mark_delivered([Repo.get!(Message, played.id)])
+    test "honours a :max_messages override" do
+      for n <- 1..4 do
+        {:ok, _} = Messages.save_message(%{"body" => "mensaje #{n}"})
+      end
 
-      assert [%{id: id, delivered_at: %DateTime{}}] = Messages.pending_messages()
-      assert id == played.id
+      bodies = Enum.map(Messages.pending_messages(max_messages: 2), & &1.body)
+      assert bodies == ["mensaje 3", "mensaje 4"]
     end
 
-    test "a message delivered before the grace window is gone" do
-      {:ok, played} = Messages.save_message(%{"body" => "antiguo"})
+    test "messages older than the retention window are not shown" do
+      {:ok, old} = Messages.save_message(%{"body" => "antiguo"})
+      {:ok, _} = Messages.save_message(%{"body" => "reciente"})
 
-      stamp_delivered(played, hours_ago: 1)
+      age_message(old, days: 31)
 
-      assert [] = Messages.pending_messages()
+      assert [%{body: "reciente"}] = Messages.pending_messages()
+    end
+
+    test "messages just inside the retention window are shown" do
+      {:ok, almost_old} = Messages.save_message(%{"body" => "casi viejo"})
+
+      age_message(almost_old, days: 29)
+
+      assert [%{body: "casi viejo"}] = Messages.pending_messages()
     end
 
     test "is empty with no messages" do
@@ -168,36 +174,17 @@ defmodule Soundai.MessagesTest do
     end
   end
 
-  describe "mark_delivered/1" do
-    test "stamps delivered_at on exactly the given messages" do
-      {:ok, one} = Messages.save_message(%{"body" => "uno"})
-      {:ok, two} = Messages.save_message(%{"body" => "dos"})
+  # Moves a message's inserted_at into the past to simulate aging. Rows are
+  # never deleted or marked; visibility depends on insertion age alone.
+  defp age_message(message, days: days) do
+    inserted_at =
+      DateTime.utc_now()
+      |> DateTime.add(-days * 24 * 3600, :second)
+      |> DateTime.truncate(:second)
 
-      assert {2, nil} = Messages.mark_delivered([one, two])
-
-      reloaded_one = Repo.get!(Message, one.id)
-      reloaded_two = Repo.get!(Message, two.id)
-      assert %DateTime{} = reloaded_one.delivered_at
-      assert DateTime.compare(reloaded_two.delivered_at, reloaded_one.delivered_at) == :eq
-
-      # both are still within the grace window, so they stay replayable
-      assert [replayed_one, replayed_two] = Messages.pending_messages()
-      assert replayed_one.id == one.id
-      assert replayed_two.id == two.id
-    end
-
-    test "accepts an empty list" do
-      assert {0, nil} = Messages.mark_delivered([])
-    end
-  end
-
-  # Stamps an explicit delivered_at in the past; mark_delivered/1 always uses
-  # "now", which would land inside the replay grace window.
-  defp stamp_delivered(message, hours_ago: hours) do
-    delivered_at = DateTime.add(DateTime.utc_now(), -hours * 3600, :second)
-
-    Repo.update_all(from(m in Message, where: m.id == ^message.id),
-      set: [delivered_at: DateTime.truncate(delivered_at, :second)]
+    Repo.update_all(
+      from(m in Soundai.Messages.Message, where: m.id == ^message.id),
+      set: [inserted_at: inserted_at]
     )
   end
 end
