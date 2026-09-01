@@ -24,6 +24,8 @@ defmodule SoundaiWeb.Router do
     post "/notas", NotesController, :create
     get "/notes", NotesController, :index
     post "/notes", NotesController, :create
+    put "/notes", NotesController, :create
+    patch "/notes", NotesController, :create
   end
 
   # JSON API. Only a single endpoint for now: the voice assistant POSTs the

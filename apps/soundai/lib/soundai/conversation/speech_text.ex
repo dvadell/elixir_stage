@@ -32,7 +32,7 @@ defmodule Soundai.Conversation.SpeechText do
 
   | Input | Output |
   |-------|--------|
-  | `→` / `➡` | "va a" |
+  | `→` / `->` | "va a" |
   | `⇒` | "entonces" |
   | `↑` / `⬆` | "sube" |
   | `↓` / `⬇` | "baja" |
@@ -97,7 +97,7 @@ defmodule Soundai.Conversation.SpeechText do
   # words before the remaining arrow/symbol blocks are deleted.
   @arrow_words [
     {"→", " va a "},
-    {"➡", " va a "},
+    {"->", " va a "},
     {"⇒", " entonces "},
     {"↑", " sube "},
     {"⬆", " sube "},

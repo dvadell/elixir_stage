@@ -108,7 +108,7 @@ defmodule Soundai.Conversation.SpeechTextTest do
 
     test "translates meaningful arrows into words" do
       assert SpeechText.clean("Madrid → Toledo") == "Madrid va a Toledo"
-      assert SpeechText.clean("siguiente ➡ paso") == "siguiente va a paso"
+      assert SpeechText.clean("siguiente -> paso") == "siguiente va a paso"
       assert SpeechText.clean("la temperatura ↑") == "la temperatura sube"
       assert SpeechText.clean("la temperatura ↓") == "la temperatura baja"
       assert SpeechText.clean("luego ⇒ fin") == "luego entonces fin"
