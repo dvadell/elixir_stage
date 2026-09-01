@@ -77,11 +77,12 @@ config :soundai, Soundai.Conversation,
 # style env vars in runtime.exs if ever needed.
 config :soundai, Soundai.Conversation.Tools.Weather, timeout_ms: 5_000
 
-# Messages (the family answering machine). `:delivery_grace_seconds` keeps a
-# just-played message replayable for this long, so a play that never reached
-# the speaker (lost tool result, double tool call) is read again on the next
-# ask instead of being silently consumed. 0 disables the replay tier.
-config :soundai, Soundai.Messages, delivery_grace_seconds: 120
+# Messages (the family answering machine). `:max_messages` is how many of the
+# most recent messages are read per request (default 5) and
+# `:message_retention_days` is how many days a message stays visible
+# (default 30). Messages older than the retention window are not shown but
+# never deleted from the database; nothing is marked as delivered.
+config :soundai, Soundai.Messages, max_messages: 5, message_retention_days: 30
 
 # Configure the endpoint
 config :soundai, SoundaiWeb.Endpoint,

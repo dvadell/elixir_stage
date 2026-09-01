@@ -144,8 +144,6 @@ defmodule Soundai.Conversation do
     end
   end
 
-  defp cap_response_length(response), do: response
-
   defp system_prompt, do: config(:system_prompt, @default_system_prompt)
 
   # ------------------------------------------------------------- last message
